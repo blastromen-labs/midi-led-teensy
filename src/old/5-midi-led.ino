@@ -3,7 +3,6 @@
 const int NUM_PANELS = 4; // Change this to the number of panels you're using
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
-const int MIDI_CHANNEL = 1;
 
 const int ledsPerStrip = LEDS_PER_PANEL;
 const int totalLeds = NUM_PANELS * LEDS_PER_PANEL;
@@ -17,11 +16,16 @@ const int config = WS2811_RGB | WS2811_800kHz;
 
 OctoWS2811 leds(ledsPerStrip, displayMemory, drawingMemory, config);
 
+struct ChannelState
+{
+    uint8_t velocity;
+};
+
 struct GroupState
 {
-    uint8_t blue;
-    uint8_t red;
-    uint8_t green;
+    ChannelState channel1; // Blue
+    ChannelState channel2; // Red
+    ChannelState channel3; // Green
 };
 
 GroupState groupStates[numGroups] = {0};
@@ -37,9 +41,9 @@ uint8_t mapVelocityToBrightness(uint8_t velocity)
 
 void updateGroupLeds(int group)
 {
-    uint8_t r = groupStates[group].red;
-    uint8_t g = groupStates[group].green;
-    uint8_t b = groupStates[group].blue;
+    uint8_t r = mapVelocityToBrightness(groupStates[group].channel2.velocity);
+    uint8_t g = mapVelocityToBrightness(groupStates[group].channel3.velocity);
+    uint8_t b = mapVelocityToBrightness(groupStates[group].channel1.velocity);
 
     int panelIndex = group / GROUPS_PER_PANEL;
     int groupWithinPanel = group % GROUPS_PER_PANEL;
@@ -56,32 +60,28 @@ void updateGroupLeds(int group)
 
 void handleNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
-    int totalNotes = numGroups * 3; // Total notes for all colors
-    int notesPerColor = numGroups;  // Notes per color (blue, red, green)
-
-    if (pitch < 128 - totalNotes || pitch > 127)
-        return; // Ignore notes outside our range
-
-    int noteIndex = 127 - pitch;
-    int colorIndex = noteIndex / notesPerColor;
-    int groupIndex = noteIndex % notesPerColor;
-
-    uint8_t newVelocity = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
-
-    switch (colorIndex)
+    int lowestNote = 128 - numGroups;
+    if (pitch >= lowestNote && pitch <= 127)
     {
-    case 0: // Blue
-        groupStates[groupIndex].blue = newVelocity;
-        break;
-    case 1: // Red
-        groupStates[groupIndex].red = newVelocity;
-        break;
-    case 2: // Green
-        groupStates[groupIndex].green = newVelocity;
-        break;
-    }
+        int group = 127 - pitch;
+        uint8_t newVelocity = isNoteOn ? velocity : 0;
 
-    updateGroupLeds(groupIndex);
+        switch (channel)
+        {
+        case 1:
+            groupStates[group].channel1.velocity = newVelocity;
+            break;
+        case 2:
+            groupStates[group].channel2.velocity = newVelocity;
+            break;
+        case 3:
+            groupStates[group].channel3.velocity = newVelocity;
+            break;
+        default:
+            return; // Ignore other channels
+        }
+        updateGroupLeds(group);
+    }
 }
 
 void setup()
@@ -98,7 +98,7 @@ void setup()
 
 void loop()
 {
-    while (usbMIDI.read(MIDI_CHANNEL))
+    while (usbMIDI.read())
     {
         // Process all available MIDI messages
     }
