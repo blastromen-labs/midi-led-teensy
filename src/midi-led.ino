@@ -25,10 +25,7 @@ struct GroupState
 };
 
 GroupState groupStates[numGroups] = {0};
-
 bool ledStateChanged = false;
-unsigned long lastUpdateTime = 0;
-const unsigned long updateInterval = 10; // Minimum time between updates in milliseconds
 
 uint8_t mapVelocityToBrightness(uint8_t velocity)
 {
@@ -103,11 +100,9 @@ void loop()
         // Process all available MIDI messages
     }
 
-    unsigned long currentTime = millis();
-    if (ledStateChanged && (currentTime - lastUpdateTime >= updateInterval))
+    if (ledStateChanged && !leds.busy())
     {
         leds.show();
         ledStateChanged = false;
-        lastUpdateTime = currentTime;
     }
 }
