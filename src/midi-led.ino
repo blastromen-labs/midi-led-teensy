@@ -1,8 +1,8 @@
 #include <OctoWS2811.h>
 
-const int NUM_PANELS = 1;       // 1-8
-const int LEDS_PER_PANEL = 512; // 256 or 512, if you chain two 256 panels together then this is 512
-const int GROUPS_PER_PANEL = 8; // 4 or 8, if you chain two 256 panels together then this is 8
+const int NUM_PANELS = 4;       // 1-8
+const int LEDS_PER_PANEL = 256; // 256 or 512, if you chain two 256 panels together then this is 512
+const int GROUPS_PER_PANEL = 4; // 4 or 8, if you chain two 256 panels together then this is 8
 const int MIDI_CHANNEL = 1;
 
 const int totalLeds = NUM_PANELS * LEDS_PER_PANEL;
