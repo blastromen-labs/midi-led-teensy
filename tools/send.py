@@ -21,7 +21,10 @@ video_files = {
     125: 'rr.mp4',
     124: 'hii.mp4',
     123: 'hand.mp4',
-    122: 'termi.mp4',
+    122: 'tetra.mp4',
+    121: 'packman.mp4',
+    120: 'ball.mp4',
+    119: 'cube_explode.mp4',
 }
 
 # Global variables to control video playback
