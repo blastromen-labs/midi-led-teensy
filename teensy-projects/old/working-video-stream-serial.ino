@@ -1,5 +1,5 @@
 #include <OctoWS2811.h>
-
+// read video from serial stream
 const int ledsPerStrip = 256;
 const int numStrips = 2;
 const int numLeds = ledsPerStrip * numStrips;

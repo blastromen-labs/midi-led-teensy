@@ -1,7 +1,8 @@
 #include <OctoWS2811.h>
 #include <SD.h>
 #include <SPI.h>
-
+#include <math.h>
+// latest version that has video and image layers
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -63,6 +64,18 @@ Mapping videoMappings[MAX_MAPPINGS];
 Mapping imageMappings[MAX_MAPPINGS];
 int numVideos = 0;
 int numImages = 0;
+
+// Gamma correction table
+const float gammaValue = 2.2;
+uint8_t gammaTable[256];
+
+void createGammaTable()
+{
+    for (int i = 0; i < 256; i++)
+    {
+        gammaTable[i] = (uint8_t)(pow((float)i / 255.0, gammaValue) * 255.0 + 0.5);
+    }
+}
 
 uint8_t mapVelocityToBrightness(uint8_t velocity)
 {
@@ -313,9 +326,9 @@ void updateLEDs()
 
             if (imageLayerActive)
             {
-                int ir = imageBuffer[bufferIndex];
-                int ig = imageBuffer[bufferIndex + 1];
-                int ib = imageBuffer[bufferIndex + 2];
+                int ir = gammaTable[imageBuffer[bufferIndex]];
+                int ig = gammaTable[imageBuffer[bufferIndex + 1]];
+                int ib = gammaTable[imageBuffer[bufferIndex + 2]];
 
                 // Simple alpha blending (assuming image has some transparency)
                 r = (ir > 0) ? ir : r;
@@ -362,6 +375,8 @@ void setup()
 
     loadMappings("video_map.txt", videoMappings, numVideos);
     loadMappings("image_map.txt", imageMappings, numImages);
+
+    createGammaTable(); // Create gamma correction table
 }
 
 void loop()

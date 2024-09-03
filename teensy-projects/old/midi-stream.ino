@@ -1,5 +1,5 @@
 #include <OctoWS2811.h>
-
+// midi and video stream at same time
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;

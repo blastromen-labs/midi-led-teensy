@@ -5,7 +5,7 @@ const int numStrips = 2;
 const int numLeds = ledsPerStrip * numStrips;
 const int width = 32;
 const int height = 16;
-
+// old version that has just a red square moving around, POC
 DMAMEM int displayMemory[ledsPerStrip * 6];
 int drawingMemory[ledsPerStrip * 6];
 const int config = WS2811_RGB | WS2811_800kHz;
