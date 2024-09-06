@@ -2,7 +2,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <math.h>
-// currently in production
+// latest prod version that has video and image layers and img brightness via velocity
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -57,7 +57,8 @@ const int MAX_MAPPINGS = 20; // Maximum number of video/image mappings
 struct Mapping
 {
     byte note;
-    char filename[13]; // 8.3 filename format + null terminator
+    char filename[13];  // 8.3 filename format + null terminator
+    uint8_t brightness; // Add brightness to the Mapping struct
 };
 
 Mapping videoMappings[MAX_MAPPINGS];
@@ -68,6 +69,8 @@ int numImages = 0;
 // Gamma correction table
 const float gammaValue = 2.2;
 uint8_t gammaTable[256];
+
+char currentImageFilename[13] = {0}; // To store the current image filename
 
 void createGammaTable()
 {
@@ -230,6 +233,7 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
         {
             if (imageMappings[i].note == pitch)
             {
+                imageMappings[i].brightness = mapVelocityToBrightness(velocity); // Set brightness based on velocity
                 startImage(imageMappings[i].filename);
                 return;
             }
@@ -279,6 +283,7 @@ void startImage(const char *filename)
         imageFile.read(imageBuffer, totalLeds * 3);
         imageFile.close();
         imageLayerActive = true;
+        strncpy(currentImageFilename, filename, 13); // Store the current image filename
         Serial.print("Started image: ");
         Serial.println(filename);
         updateLEDs();
@@ -329,6 +334,21 @@ void updateLEDs()
                 int ir = gammaTable[imageBuffer[bufferIndex]];
                 int ig = gammaTable[imageBuffer[bufferIndex + 1]];
                 int ib = gammaTable[imageBuffer[bufferIndex + 2]];
+
+                // Apply brightness to the image
+                uint8_t brightness = 0;
+                for (int i = 0; i < numImages; i++)
+                {
+                    if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
+                    {
+                        brightness = imageMappings[i].brightness;
+                        break;
+                    }
+                }
+
+                ir = (ir * brightness) >> 8;
+                ig = (ig * brightness) >> 8;
+                ib = (ib * brightness) >> 8;
 
                 // Simple alpha blending (assuming image has some transparency)
                 r = (ir > 0) ? ir : r;

@@ -2,6 +2,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <math.h>
+#include <FastLED.h> // Add this at the top of the file
+
 // latest dev version that has video and image layers
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
@@ -71,6 +73,19 @@ const float gammaValue = 2.2;
 uint8_t gammaTable[256];
 
 char currentImageFilename[13] = {0}; // To store the current image filename
+
+const int HUE_CC = 1;
+const int SATURATION_CC = 2;
+const int VALUE_CC = 3;
+
+struct ImageAdjustments
+{
+    uint8_t hue;
+    uint8_t saturation;
+    uint8_t value;
+};
+
+ImageAdjustments currentImageAdjustments = {0, 255, 255}; // Default to no adjustment
 
 void createGammaTable()
 {
@@ -245,6 +260,26 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     }
 }
 
+void handleControlChange(byte channel, byte control, byte value)
+{
+    if (channel == IMAGE_MIDI_CHANNEL)
+    {
+        switch (control)
+        {
+        case HUE_CC:
+            currentImageAdjustments.hue = value * 2; // Scale 0-127 to 0-254
+            break;
+        case SATURATION_CC:
+            currentImageAdjustments.saturation = map(value, 0, 127, 0, 255);
+            break;
+        case VALUE_CC:
+            currentImageAdjustments.value = map(value, 0, 127, 0, 255);
+            break;
+        }
+        updateLEDs();
+    }
+}
+
 void startVideo(const char *filename)
 {
     if (videoPlaying)
@@ -283,7 +318,8 @@ void startImage(const char *filename)
         imageFile.read(imageBuffer, totalLeds * 3);
         imageFile.close();
         imageLayerActive = true;
-        strncpy(currentImageFilename, filename, 13); // Store the current image filename
+        strncpy(currentImageFilename, filename, 12); // Copy at most 12 characters
+        currentImageFilename[12] = '\0';             // Ensure null-termination
         Serial.print("Started image: ");
         Serial.println(filename);
         updateLEDs();
@@ -346,6 +382,24 @@ void updateLEDs()
                     }
                 }
 
+                // Convert RGB to HSV
+                CRGB rgbColor(ir, ig, ib);
+                CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                // Apply HSV adjustments
+                hsvColor.hue += currentImageAdjustments.hue;
+                hsvColor.saturation = scale8(hsvColor.saturation, currentImageAdjustments.saturation);
+                hsvColor.value = scale8(hsvColor.value, currentImageAdjustments.value);
+
+                // Convert back to RGB
+                CRGB adjustedRgb;
+                hsv2rgb_rainbow(hsvColor, adjustedRgb);
+
+                ir = adjustedRgb.r;
+                ig = adjustedRgb.g;
+                ib = adjustedRgb.b;
+
+                // Apply brightness
                 ir = (ir * brightness) >> 8;
                 ig = (ig * brightness) >> 8;
                 ib = (ib * brightness) >> 8;
@@ -382,6 +436,7 @@ void setup()
         handleLEDNoteEvent(channel, pitch, velocity, false);
         handleVideoNoteEvent(channel, pitch, velocity, false);
         handleImageNoteEvent(channel, pitch, velocity, false); });
+    usbMIDI.setHandleControlChange(handleControlChange);
 
     leds.begin();
     leds.show();
