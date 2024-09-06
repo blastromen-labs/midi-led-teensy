@@ -31,8 +31,8 @@ def process_directory(input_dir, output_dir):
             print(f"Converted {filename} to {os.path.basename(output_path)}")
 
 # Set your input and output directories here
-input_directory = 'sd_card_files'
-output_directory = 'sd_card_files'
+input_directory = '../media/sd_card_files/img'
+output_directory = '../media/sd_card_files/img/bin'
 
 process_directory(input_directory, output_directory)
 print("Conversion complete!")
