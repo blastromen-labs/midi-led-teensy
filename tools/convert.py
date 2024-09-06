@@ -14,8 +14,8 @@ def convert_video_to_binary(input_file, output_file):
             f.write(frame_rgb.tobytes())
     cap.release()
 
-video_folder = '../videos/'
-output_folder = 'sd_card_files/'
+video_folder = '../media/videos/'
+output_folder = '../media/sd_card_files/vid'
 os.makedirs(output_folder, exist_ok=True)
 
 video_files = [
