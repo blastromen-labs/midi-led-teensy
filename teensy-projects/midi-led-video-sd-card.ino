@@ -4,7 +4,7 @@
 #include <math.h>
 #include <FastLED.h> // Add this at the top of the file
 
-// latest dev version that has video and image layers
+// latest dev version that has video and image layers, HSC for image and video and video looping 7.9.24
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;

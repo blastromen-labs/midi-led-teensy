@@ -2,7 +2,9 @@
 #include <SD.h>
 #include <SPI.h>
 #include <math.h>
-// latest prod version that has video and image layers and img brightness via velocity
+#include <FastLED.h> // Add this at the top of the file
+
+// latest prod version that has video and image layers, HSC for image and video and video looping 7.9.24
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -71,6 +73,24 @@ const float gammaValue = 2.2;
 uint8_t gammaTable[256];
 
 char currentImageFilename[13] = {0}; // To store the current image filename
+
+const int HUE_CC = 1;
+const int SATURATION_CC = 2;
+const int VALUE_CC = 3;
+
+struct HSVAdjustments
+{
+    uint8_t hue;
+    uint8_t saturation;
+    uint8_t value;
+};
+
+HSVAdjustments videoAdjustments = {0, 255, 255}; // Default to no adjustment
+HSVAdjustments imageAdjustments = {0, 255, 255}; // Default to no adjustment
+
+bool videoLooping = false;
+unsigned long videoStartPosition = 0;
+unsigned long videoFileSize = 0;
 
 void createGammaTable()
 {
@@ -245,6 +265,37 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     }
 }
 
+void handleControlChange(byte channel, byte control, byte value)
+{
+    HSVAdjustments *adjustments = nullptr;
+
+    if (channel == VIDEO_MIDI_CHANNEL)
+    {
+        adjustments = &videoAdjustments;
+    }
+    else if (channel == IMAGE_MIDI_CHANNEL)
+    {
+        adjustments = &imageAdjustments;
+    }
+
+    if (adjustments)
+    {
+        switch (control)
+        {
+        case HUE_CC:
+            adjustments->hue = value * 2; // Scale 0-127 to 0-254
+            break;
+        case SATURATION_CC:
+            adjustments->saturation = map(value, 0, 127, 0, 255);
+            break;
+        case VALUE_CC:
+            adjustments->value = map(value, 0, 127, 0, 255);
+            break;
+        }
+        updateLEDs();
+    }
+}
+
 void startVideo(const char *filename)
 {
     if (videoPlaying)
@@ -255,7 +306,10 @@ void startVideo(const char *filename)
     if (mediaFile)
     {
         videoPlaying = true;
+        videoLooping = true;
         lastFrameTime = millis();
+        videoStartPosition = mediaFile.position();
+        videoFileSize = mediaFile.size();
         Serial.print("Started video: ");
         Serial.println(filename);
     }
@@ -269,6 +323,7 @@ void startVideo(const char *filename)
 void stopVideo()
 {
     videoPlaying = false;
+    videoLooping = false;
     mediaFile.close();
     memset(frameBuffer, 0, sizeof(frameBuffer));
     updateLEDs();
@@ -283,7 +338,8 @@ void startImage(const char *filename)
         imageFile.read(imageBuffer, totalLeds * 3);
         imageFile.close();
         imageLayerActive = true;
-        strncpy(currentImageFilename, filename, 13); // Store the current image filename
+        strncpy(currentImageFilename, filename, 12); // Copy at most 12 characters
+        currentImageFilename[12] = '\0';             // Ensure null-termination
         Serial.print("Started image: ");
         Serial.println(filename);
         updateLEDs();
@@ -323,7 +379,22 @@ void updateLEDs()
                 int brightness = (r * 77 + g * 150 + b * 29) >> 8;
 
                 // Apply threshold to video content
-                if (brightness <= brightnessThreshold)
+                if (brightness > brightnessThreshold)
+                {
+                    // Apply HSV adjustments to video
+                    CRGB rgbColor(r, g, b);
+                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                    hsvColor.hue += videoAdjustments.hue;
+                    hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
+                    hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
+
+                    hsv2rgb_rainbow(hsvColor, rgbColor);
+                    r = rgbColor.r;
+                    g = rgbColor.g;
+                    b = rgbColor.b;
+                }
+                else
                 {
                     r = g = b = 0;
                 }
@@ -346,6 +417,23 @@ void updateLEDs()
                     }
                 }
 
+                // Convert RGB to HSV
+                CRGB rgbColor(ir, ig, ib);
+                CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                // Apply HSV adjustments
+                hsvColor.hue += imageAdjustments.hue;
+                hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
+                hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
+
+                // Convert back to RGB
+                hsv2rgb_rainbow(hsvColor, rgbColor);
+
+                ir = rgbColor.r;
+                ig = rgbColor.g;
+                ib = rgbColor.b;
+
+                // Apply brightness
                 ir = (ir * brightness) >> 8;
                 ig = (ig * brightness) >> 8;
                 ib = (ib * brightness) >> 8;
@@ -382,6 +470,7 @@ void setup()
         handleLEDNoteEvent(channel, pitch, velocity, false);
         handleVideoNoteEvent(channel, pitch, velocity, false);
         handleImageNoteEvent(channel, pitch, velocity, false); });
+    usbMIDI.setHandleControlChange(handleControlChange);
 
     leds.begin();
     leds.show();
@@ -415,6 +504,11 @@ void loop()
             mediaFile.read(frameBuffer, totalLeds * 3);
             updateLEDs();
             lastFrameTime = millis();
+        }
+        else if (videoLooping)
+        {
+            // Reached end of file, loop back to start
+            mediaFile.seek(videoStartPosition);
         }
         else
         {
