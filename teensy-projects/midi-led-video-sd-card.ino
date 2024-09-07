@@ -6,6 +6,7 @@
 
 // latest dev version that has video and image layers, HSC for image and video and video looping and layer order and image video blending 7.9.24
 // gamma correction removed and added HSV to led blocks
+// X,Y shift for video and image layers
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -78,6 +79,8 @@ char currentImageFilename[13] = {0}; // To store the current image filename
 const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
+const int X_POSITION_CC = 4;
+const int Y_POSITION_CC = 5;
 
 struct HSVAdjustments
 {
@@ -93,6 +96,11 @@ HSVAdjustments ledBlockAdjustments = {0, 255, 255}; // Default to no adjustment
 bool videoLooping = false;
 unsigned long videoStartPosition = 0;
 unsigned long videoFileSize = 0;
+
+int imageOffsetX = 0;
+int imageOffsetY = 0;
+int videoOffsetX = 0;
+int videoOffsetY = 0;
 
 void createGammaTable()
 {
@@ -310,6 +318,26 @@ void handleControlChange(byte channel, byte control, byte value)
         case VALUE_CC:
             adjustments->value = map(value, 0, 127, 0, 255);
             break;
+        case X_POSITION_CC:
+            if (channel == VIDEO_MIDI_CHANNEL)
+            {
+                videoOffsetX = map(value, 0, 127, -width, width);
+            }
+            else if (channel == IMAGE_MIDI_CHANNEL)
+            {
+                imageOffsetX = map(value, 0, 127, -width, width);
+            }
+            break;
+        case Y_POSITION_CC:
+            if (channel == VIDEO_MIDI_CHANNEL)
+            {
+                videoOffsetY = map(value, 0, 127, height, -height);
+            }
+            else if (channel == IMAGE_MIDI_CHANNEL)
+            {
+                imageOffsetY = map(value, 0, 127, height, -height);
+            }
+            break;
         }
         updateLEDs();
     }
@@ -388,97 +416,120 @@ void updateLEDs()
             int bufferIndex = (y * width + x) * 3;
             int r = 0, g = 0, b = 0;
 
-            // Start with video layer (bottom layer)
+            // Apply video layer (bottom layer)
             if (videoPlaying)
             {
-                r = frameBuffer[bufferIndex];
-                g = frameBuffer[bufferIndex + 1];
-                b = frameBuffer[bufferIndex + 2];
+                // Calculate video coordinates with offset
+                int vidX = x - videoOffsetX;
+                int vidY = y - videoOffsetY;
 
-                // Calculate perceived brightness
-                int brightness = (r * 77 + g * 150 + b * 29) >> 8;
-
-                // Apply threshold to video content
-                if (brightness > brightnessThreshold)
+                // Check if the pixel is within the video bounds
+                if (vidX >= 0 && vidX < width && vidY >= 0 && vidY < height)
                 {
-                    // Apply HSV adjustments to video
-                    CRGB rgbColor(r, g, b);
-                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+                    int vidBufferIndex = (vidY * width + vidX) * 3;
+                    r = frameBuffer[vidBufferIndex];
+                    g = frameBuffer[vidBufferIndex + 1];
+                    b = frameBuffer[vidBufferIndex + 2];
 
-                    hsvColor.hue += videoAdjustments.hue;
-                    hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
-                    hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
+                    // Calculate perceived brightness
+                    int brightness = (r * 77 + g * 150 + b * 29) >> 8;
 
-                    hsv2rgb_rainbow(hsvColor, rgbColor);
-                    r = rgbColor.r;
-                    g = rgbColor.g;
-                    b = rgbColor.b;
+                    // Apply threshold to video content
+                    if (brightness > brightnessThreshold)
+                    {
+                        // Apply HSV adjustments to video
+                        CRGB rgbColor(r, g, b);
+                        CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                        hsvColor.hue += videoAdjustments.hue;
+                        hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
+                        hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
+
+                        hsv2rgb_rainbow(hsvColor, rgbColor);
+                        r = rgbColor.r;
+                        g = rgbColor.g;
+                        b = rgbColor.b;
+                    }
+                    else
+                    {
+                        r = g = b = 0;
+                    }
                 }
                 else
                 {
-                    r = g = b = 0;
+                    r = g = b = 0; // Outside video bounds, set to black
                 }
             }
 
             // Apply image layer (middle layer)
             if (imageLayerActive)
             {
-                int ir = imageBuffer[bufferIndex];
-                int ig = imageBuffer[bufferIndex + 1];
-                int ib = imageBuffer[bufferIndex + 2];
+                // Calculate image coordinates with offset
+                int imgX = x - imageOffsetX;
+                int imgY = y - imageOffsetY;
 
-                // Apply brightness to the image
-                uint8_t brightness = 255; // Default to full brightness
-                for (int i = 0; i < numImages; i++)
+                // Check if the pixel is within the image bounds
+                if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
                 {
-                    if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
+                    int imgBufferIndex = (imgY * width + imgX) * 3;
+                    int ir = imageBuffer[imgBufferIndex];
+                    int ig = imageBuffer[imgBufferIndex + 1];
+                    int ib = imageBuffer[imgBufferIndex + 2];
+
+                    // Apply brightness to the image
+                    uint8_t brightness = 255; // Default to full brightness
+                    for (int i = 0; i < numImages; i++)
                     {
-                        brightness = imageMappings[i].brightness;
-                        break;
+                        if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
+                        {
+                            brightness = imageMappings[i].brightness;
+                            break;
+                        }
                     }
+
+                    // Convert RGB to HSV
+                    CRGB rgbColor(ir, ig, ib);
+                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                    // Apply HSV adjustments
+                    hsvColor.hue += imageAdjustments.hue;
+                    hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
+                    hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
+
+                    // Convert back to RGB
+                    hsv2rgb_rainbow(hsvColor, rgbColor);
+
+                    ir = rgbColor.r;
+                    ig = rgbColor.g;
+                    ib = rgbColor.b;
+
+                    // Apply brightness
+                    ir = (ir * brightness) >> 8;
+                    ig = (ig * brightness) >> 8;
+                    ib = (ib * brightness) >> 8;
+
+                    // Determine alpha based on adjusted color intensity and original brightness
+                    float alpha;
+                    int maxAdjustedColor = max(max(ir, ig), ib);
+                    int maxOriginalColor = max(max(imageBuffer[imgBufferIndex], imageBuffer[imgBufferIndex + 1]), imageBuffer[imgBufferIndex + 2]);
+
+                    if (maxOriginalColor == 255 && brightness == 255)
+                    {
+                        // If original color was max brightness and MIDI velocity is max
+                        alpha = float(maxAdjustedColor) / 255.0f;
+                    }
+                    else
+                    {
+                        // Otherwise, use a blend
+                        alpha = float(maxAdjustedColor) / 255.0f * 0.5f;
+                    }
+
+                    // Alpha blending with video layer
+                    r = (1 - alpha) * r + alpha * ir;
+                    g = (1 - alpha) * g + alpha * ig;
+                    b = (1 - alpha) * b + alpha * ib;
                 }
-
-                // Convert RGB to HSV
-                CRGB rgbColor(ir, ig, ib);
-                CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                // Apply HSV adjustments
-                hsvColor.hue += imageAdjustments.hue;
-                hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
-                hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
-
-                // Convert back to RGB
-                hsv2rgb_rainbow(hsvColor, rgbColor);
-
-                ir = rgbColor.r;
-                ig = rgbColor.g;
-                ib = rgbColor.b;
-
-                // Apply brightness
-                ir = (ir * brightness) >> 8;
-                ig = (ig * brightness) >> 8;
-                ib = (ib * brightness) >> 8;
-
-                // Determine alpha based on adjusted color intensity and original brightness
-                float alpha;
-                int maxAdjustedColor = max(max(ir, ig), ib);
-                int maxOriginalColor = max(max(imageBuffer[bufferIndex], imageBuffer[bufferIndex + 1]), imageBuffer[bufferIndex + 2]);
-
-                if (maxOriginalColor == 255 && brightness == 255)
-                {
-                    // If original color was max brightness and MIDI velocity is max
-                    alpha = float(maxAdjustedColor) / 255.0f;
-                }
-                else
-                {
-                    // Otherwise, use a blend
-                    alpha = float(maxAdjustedColor) / 255.0f * 0.5f;
-                }
-
-                // Alpha blending with video layer
-                r = (1 - alpha) * r + alpha * ir;
-                g = (1 - alpha) * g + alpha * ig;
-                b = (1 - alpha) * b + alpha * ib;
+                // If pixel is outside image bounds, it remains transparent (video shows through)
             }
 
             // Apply LED block layer (top layer)
