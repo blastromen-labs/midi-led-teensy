@@ -4,7 +4,8 @@
 #include <math.h>
 #include <FastLED.h> // Add this at the top of the file
 
-// latest prod version that has video and image layers, HSC for image and video and video looping and layer order and image video blending (corrected) 7.9.24
+// latest dev version that has video and image layers, HSC for image and video and video looping and layer order and image video blending 7.9.24
+// gamma correction removed and added HSV to led blocks
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -85,8 +86,9 @@ struct HSVAdjustments
     uint8_t value;
 };
 
-HSVAdjustments videoAdjustments = {0, 255, 255}; // Default to no adjustment
-HSVAdjustments imageAdjustments = {0, 255, 255}; // Default to no adjustment
+HSVAdjustments videoAdjustments = {0, 255, 255};    // Default to no adjustment
+HSVAdjustments imageAdjustments = {0, 255, 255};    // Default to no adjustment
+HSVAdjustments ledBlockAdjustments = {0, 255, 255}; // Default to no adjustment
 
 bool videoLooping = false;
 unsigned long videoStartPosition = 0;
@@ -150,6 +152,19 @@ void updateGroupLeds(int group)
     int groupWithinPanel = group % GROUPS_PER_PANEL;
     int startLed = groupWithinPanel * ledsPerGroup;
     int endLed = startLed + ledsPerGroup - 1;
+
+    // Apply HSV adjustments
+    CRGB rgbColor(r, g, b);
+    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+    hsvColor.hue += ledBlockAdjustments.hue;
+    hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
+    hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+
+    hsv2rgb_rainbow(hsvColor, rgbColor);
+    r = rgbColor.r;
+    g = rgbColor.g;
+    b = rgbColor.b;
 
     for (int i = startLed; i <= endLed; i++)
     {
@@ -269,7 +284,11 @@ void handleControlChange(byte channel, byte control, byte value)
 {
     HSVAdjustments *adjustments = nullptr;
 
-    if (channel == VIDEO_MIDI_CHANNEL)
+    if (channel == LED_MIDI_CHANNEL)
+    {
+        adjustments = &ledBlockAdjustments;
+    }
+    else if (channel == VIDEO_MIDI_CHANNEL)
     {
         adjustments = &videoAdjustments;
     }
@@ -467,6 +486,19 @@ void updateLEDs()
             int lr = groupStates[group].red;
             int lg = groupStates[group].green;
             int lb = groupStates[group].blue;
+
+            // Apply HSV adjustments to LED block colors
+            CRGB rgbColor(lr, lg, lb);
+            CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+            hsvColor.hue += ledBlockAdjustments.hue;
+            hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
+            hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+
+            hsv2rgb_rainbow(hsvColor, rgbColor);
+            lr = rgbColor.r;
+            lg = rgbColor.g;
+            lb = rgbColor.b;
 
             // Alpha blending with LED block layer
             float ledAlpha = (lr + lg + lb) > 0 ? 1.0f : 0.0f; // Simple binary alpha
