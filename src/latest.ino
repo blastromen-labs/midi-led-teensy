@@ -4,7 +4,7 @@
 #include <math.h>
 #include <FastLED.h> // Add this at the top of the file
 
-// latest prod version that has video and image layers, HSC for image and video and video looping and layer order and image video blending 7.9.24
+// latest prod version that has video and image layers, HSC for image and video and video looping and layer order and image video blending (corrected) 7.9.24
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -404,12 +404,12 @@ void updateLEDs()
             // Apply image layer (middle layer)
             if (imageLayerActive)
             {
-                int ir = gammaTable[imageBuffer[bufferIndex]];
-                int ig = gammaTable[imageBuffer[bufferIndex + 1]];
-                int ib = gammaTable[imageBuffer[bufferIndex + 2]];
+                int ir = imageBuffer[bufferIndex];
+                int ig = imageBuffer[bufferIndex + 1];
+                int ib = imageBuffer[bufferIndex + 2];
 
                 // Apply brightness to the image
-                uint8_t brightness = 0;
+                uint8_t brightness = 255; // Default to full brightness
                 for (int i = 0; i < numImages; i++)
                 {
                     if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
@@ -440,8 +440,23 @@ void updateLEDs()
                 ig = (ig * brightness) >> 8;
                 ib = (ib * brightness) >> 8;
 
+                // Determine alpha based on adjusted color intensity and original brightness
+                float alpha;
+                int maxAdjustedColor = max(max(ir, ig), ib);
+                int maxOriginalColor = max(max(imageBuffer[bufferIndex], imageBuffer[bufferIndex + 1]), imageBuffer[bufferIndex + 2]);
+
+                if (maxOriginalColor == 255 && brightness == 255)
+                {
+                    // If original color was max brightness and MIDI velocity is max
+                    alpha = float(maxAdjustedColor) / 255.0f;
+                }
+                else
+                {
+                    // Otherwise, use a blend
+                    alpha = float(maxAdjustedColor) / 255.0f * 0.5f;
+                }
+
                 // Alpha blending with video layer
-                float alpha = 0.5f; // 50% blend, adjust as needed
                 r = (1 - alpha) * r + alpha * ir;
                 g = (1 - alpha) * g + alpha * ig;
                 b = (1 - alpha) * b + alpha * ib;
