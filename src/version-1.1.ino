@@ -4,7 +4,7 @@
 #include <math.h>
 #include <FastLED.h> // Add this at the top of the file
 
-// latest prod version that has video and image layers, HSC for image and video and video looping 7.9.24
+// this has video and image layers, HSV color adjustments for images, and gamma correction and brightness control for image via velocity 6.9.24
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -78,19 +78,14 @@ const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
 
-struct HSVAdjustments
+struct ImageAdjustments
 {
     uint8_t hue;
     uint8_t saturation;
     uint8_t value;
 };
 
-HSVAdjustments videoAdjustments = {0, 255, 255}; // Default to no adjustment
-HSVAdjustments imageAdjustments = {0, 255, 255}; // Default to no adjustment
-
-bool videoLooping = false;
-unsigned long videoStartPosition = 0;
-unsigned long videoFileSize = 0;
+ImageAdjustments currentImageAdjustments = {0, 255, 255}; // Default to no adjustment
 
 void createGammaTable()
 {
@@ -267,29 +262,18 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
 
 void handleControlChange(byte channel, byte control, byte value)
 {
-    HSVAdjustments *adjustments = nullptr;
-
-    if (channel == VIDEO_MIDI_CHANNEL)
-    {
-        adjustments = &videoAdjustments;
-    }
-    else if (channel == IMAGE_MIDI_CHANNEL)
-    {
-        adjustments = &imageAdjustments;
-    }
-
-    if (adjustments)
+    if (channel == IMAGE_MIDI_CHANNEL)
     {
         switch (control)
         {
         case HUE_CC:
-            adjustments->hue = value * 2; // Scale 0-127 to 0-254
+            currentImageAdjustments.hue = value * 2; // Scale 0-127 to 0-254
             break;
         case SATURATION_CC:
-            adjustments->saturation = map(value, 0, 127, 0, 255);
+            currentImageAdjustments.saturation = map(value, 0, 127, 0, 255);
             break;
         case VALUE_CC:
-            adjustments->value = map(value, 0, 127, 0, 255);
+            currentImageAdjustments.value = map(value, 0, 127, 0, 255);
             break;
         }
         updateLEDs();
@@ -306,10 +290,7 @@ void startVideo(const char *filename)
     if (mediaFile)
     {
         videoPlaying = true;
-        videoLooping = true;
         lastFrameTime = millis();
-        videoStartPosition = mediaFile.position();
-        videoFileSize = mediaFile.size();
         Serial.print("Started video: ");
         Serial.println(filename);
     }
@@ -323,7 +304,6 @@ void startVideo(const char *filename)
 void stopVideo()
 {
     videoPlaying = false;
-    videoLooping = false;
     mediaFile.close();
     memset(frameBuffer, 0, sizeof(frameBuffer));
     updateLEDs();
@@ -379,22 +359,7 @@ void updateLEDs()
                 int brightness = (r * 77 + g * 150 + b * 29) >> 8;
 
                 // Apply threshold to video content
-                if (brightness > brightnessThreshold)
-                {
-                    // Apply HSV adjustments to video
-                    CRGB rgbColor(r, g, b);
-                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                    hsvColor.hue += videoAdjustments.hue;
-                    hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
-                    hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
-
-                    hsv2rgb_rainbow(hsvColor, rgbColor);
-                    r = rgbColor.r;
-                    g = rgbColor.g;
-                    b = rgbColor.b;
-                }
-                else
+                if (brightness <= brightnessThreshold)
                 {
                     r = g = b = 0;
                 }
@@ -422,16 +387,17 @@ void updateLEDs()
                 CHSV hsvColor = rgb2hsv_approximate(rgbColor);
 
                 // Apply HSV adjustments
-                hsvColor.hue += imageAdjustments.hue;
-                hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
-                hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
+                hsvColor.hue += currentImageAdjustments.hue;
+                hsvColor.saturation = scale8(hsvColor.saturation, currentImageAdjustments.saturation);
+                hsvColor.value = scale8(hsvColor.value, currentImageAdjustments.value);
 
                 // Convert back to RGB
-                hsv2rgb_rainbow(hsvColor, rgbColor);
+                CRGB adjustedRgb;
+                hsv2rgb_rainbow(hsvColor, adjustedRgb);
 
-                ir = rgbColor.r;
-                ig = rgbColor.g;
-                ib = rgbColor.b;
+                ir = adjustedRgb.r;
+                ig = adjustedRgb.g;
+                ib = adjustedRgb.b;
 
                 // Apply brightness
                 ir = (ir * brightness) >> 8;
@@ -504,11 +470,6 @@ void loop()
             mediaFile.read(frameBuffer, totalLeds * 3);
             updateLEDs();
             lastFrameTime = millis();
-        }
-        else if (videoLooping)
-        {
-            // Reached end of file, loop back to start
-            mediaFile.seek(videoStartPosition);
         }
         else
         {
