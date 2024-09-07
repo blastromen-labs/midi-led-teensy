@@ -88,6 +88,10 @@ struct HSVAdjustments
 HSVAdjustments videoAdjustments = {0, 255, 255}; // Default to no adjustment
 HSVAdjustments imageAdjustments = {0, 255, 255}; // Default to no adjustment
 
+bool videoLooping = false;
+unsigned long videoStartPosition = 0;
+unsigned long videoFileSize = 0;
+
 void createGammaTable()
 {
     for (int i = 0; i < 256; i++)
@@ -302,7 +306,10 @@ void startVideo(const char *filename)
     if (mediaFile)
     {
         videoPlaying = true;
+        videoLooping = true;
         lastFrameTime = millis();
+        videoStartPosition = mediaFile.position();
+        videoFileSize = mediaFile.size();
         Serial.print("Started video: ");
         Serial.println(filename);
     }
@@ -316,6 +323,7 @@ void startVideo(const char *filename)
 void stopVideo()
 {
     videoPlaying = false;
+    videoLooping = false;
     mediaFile.close();
     memset(frameBuffer, 0, sizeof(frameBuffer));
     updateLEDs();
@@ -496,6 +504,11 @@ void loop()
             mediaFile.read(frameBuffer, totalLeds * 3);
             updateLEDs();
             lastFrameTime = millis();
+        }
+        else if (videoLooping)
+        {
+            // Reached end of file, loop back to start
+            mediaFile.seek(videoStartPosition);
         }
         else
         {
