@@ -4,7 +4,7 @@
 #include <math.h>
 #include <FastLED.h> // Add this at the top of the file
 
-// latest dev version that has video and image layers, HSC for image and video and video looping 7.9.24
+// latest dev version that has video and image layers, HSC for image and video and video looping and layer order and image video blending 7.9.24
 const int NUM_PANELS = 2;
 const int LEDS_PER_PANEL = 256;
 const int GROUPS_PER_PANEL = 4;
@@ -369,6 +369,7 @@ void updateLEDs()
             int bufferIndex = (y * width + x) * 3;
             int r = 0, g = 0, b = 0;
 
+            // Start with video layer (bottom layer)
             if (videoPlaying)
             {
                 r = frameBuffer[bufferIndex];
@@ -400,6 +401,7 @@ void updateLEDs()
                 }
             }
 
+            // Apply image layer (middle layer)
             if (imageLayerActive)
             {
                 int ir = gammaTable[imageBuffer[bufferIndex]];
@@ -438,17 +440,24 @@ void updateLEDs()
                 ig = (ig * brightness) >> 8;
                 ib = (ib * brightness) >> 8;
 
-                // Simple alpha blending (assuming image has some transparency)
-                r = (ir > 0) ? ir : r;
-                g = (ig > 0) ? ig : g;
-                b = (ib > 0) ? ib : b;
+                // Alpha blending with video layer
+                float alpha = 0.5f; // 50% blend, adjust as needed
+                r = (1 - alpha) * r + alpha * ir;
+                g = (1 - alpha) * g + alpha * ig;
+                b = (1 - alpha) * b + alpha * ib;
             }
 
-            // Combine with MIDI colors
+            // Apply LED block layer (top layer)
             int group = ledIndex / ledsPerGroup;
-            r = max(r, groupStates[group].red);
-            g = max(g, groupStates[group].green);
-            b = max(b, groupStates[group].blue);
+            int lr = groupStates[group].red;
+            int lg = groupStates[group].green;
+            int lb = groupStates[group].blue;
+
+            // Alpha blending with LED block layer
+            float ledAlpha = (lr + lg + lb) > 0 ? 1.0f : 0.0f; // Simple binary alpha
+            r = (1 - ledAlpha) * r + ledAlpha * lr;
+            g = (1 - ledAlpha) * g + ledAlpha * lg;
+            b = (1 - ledAlpha) * b + ledAlpha * lb;
 
             leds.setPixel(ledIndex, r, g, b);
         }
