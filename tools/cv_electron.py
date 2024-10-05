@@ -5,7 +5,7 @@ import math
 import random
 
 # Video settings
-width, height = 320, 160
+width, height = 320, 960
 fps = 30
 duration = 6  # seconds (increased to accommodate explosion)
 total_frames = fps * duration
@@ -18,24 +18,27 @@ os.makedirs(output_dir, exist_ok=True)
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(os.path.join(output_dir, 'atom.mp4'), fourcc, fps, (width, height))
 
+# Create a binary file for 32x96 output
+binary_output = open(os.path.join(output_dir, 'atom.bin'), 'wb')
+
 # Atom properties
-max_atom_size = 200
+max_atom_size = 600  # Increased to fit the taller resolution
 min_atom_size = 1
 
 # Electron properties
 electron_color = (255, 255, 0)  # Cyan (BGR format)
-electron_size = 2
-max_orbit_radius = 100
-min_orbit_radius = 5
+electron_size = 6  # Increased size
+max_orbit_radius = 300  # Increased to fit the taller resolution
+min_orbit_radius = 15
 base_electron_speed = 0.1
 
 # Trace properties
-trace_length = 10
+trace_length = 20  # Increased for more visible traces
 
 # Explosion properties
 explosion_start = int(total_frames * 0.8)  # Start explosion at 80% of the video
-num_particles = 100
-particle_max_speed = 5
+num_particles = 300  # Increased number of particles
+particle_max_speed = 15  # Increased speed
 
 # Create nucleus with rotating red and blue spheres
 def create_nucleus(size, angle):
@@ -85,6 +88,12 @@ for _ in range(num_particles):
     }
     particles.append(particle)
 
+def adjust_contrast_brightness(image, contrast=1.0, brightness=0):
+    return cv2.addWeighted(image, contrast, image, 0, brightness)
+
+def apply_black_threshold(image, threshold):
+    return np.where(image < threshold, 0, image)
+
 # Animation loop
 for frame in range(total_frames):
     # Create a black background
@@ -96,7 +105,7 @@ for frame in range(total_frames):
 
         # Calculate atom size and orbit radius (zoom effect)
         atom_size = int(min_atom_size + (max_atom_size - min_atom_size) * progress**2)
-        orbit_radius = max(2, min_orbit_radius + (max_orbit_radius - min_orbit_radius) * (1 - progress**2))
+        orbit_radius = max(6, min_orbit_radius + (max_orbit_radius - min_orbit_radius) * (1 - progress**2))
 
         # Calculate atom center position (moving across the screen)
         atom_center_x = int(width * 0.8 - progress * width * 0.6)
@@ -167,13 +176,42 @@ for frame in range(total_frames):
             cv2.circle(img, (int(particle['x']), int(particle['y'])), particle['size'], color, -1)
 
     # Add some glow
-    img_glow = cv2.GaussianBlur(img, (5, 5), 0)
+    img_glow = cv2.GaussianBlur(img, (15, 15), 0)  # Increased blur size
     img = cv2.addWeighted(img, 1, img_glow, 0.5, 0)
 
-    # Write the frame
+    # Write the frame to MP4
     out.write(img)
 
-# Release the VideoWriter
-out.release()
+    # Process frame for binary output
+    small_frame = cv2.resize(img, (32, 96))
+    frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-print("Video generated: ../media/videos/atom.mp4")
+    # Convert to LAB color space
+    lab = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L-channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
+    cl = clahe.apply(l)
+
+    # Merge the CLAHE enhanced L-channel back with A and B channels
+    limg = cv2.merge((cl,a,b))
+
+    # Convert back to RGB color space
+    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+
+    # Apply custom contrast and brightness adjustment
+    adjusted = adjust_contrast_brightness(enhanced, contrast=0.9, brightness=-20)
+
+    # Apply black threshold
+    final = apply_black_threshold(adjusted, threshold=20)
+
+    # Write to binary file
+    binary_output.write(final.astype(np.uint8).tobytes())
+
+# Release the VideoWriter and close the binary file
+out.release()
+binary_output.close()
+
+print(f"Video generated: {os.path.join(output_dir, 'atom.mp4')}")
+print(f"Binary file generated: {os.path.join(output_dir, 'atom.bin')}")
