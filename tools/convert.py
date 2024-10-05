@@ -46,7 +46,7 @@ output_folder = '../media/sd_card_files/vid'
 os.makedirs(output_folder, exist_ok=True)
 
 video_files = [
-    'space.mp4', 'cgi.mp4', 'car.mp4'
+    'atom.mp4', 'atom2.mp4',
     # 'chq.mp4', 'a.mp4', 'rr.mp4', 'hii.mp4', 'hand.mp4',
     # 'tetra.mp4', 'packman.mp4', 'ball.mp4', 'cube_explode.mp4', 'blastrov.mp4', 'void.mp4'
 ]

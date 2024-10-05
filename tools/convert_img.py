@@ -3,8 +3,8 @@ from PIL import Image
 
 def convert_bmp_to_bin(input_file, output_file):
     with Image.open(input_file) as img:
-        # Resize image to 32x16 pixels
-        img = img.resize((32, 16), Image.LANCZOS)
+        # Resize image to 32x96 pixels
+        img = img.resize((32, 96), Image.LANCZOS)
 
         # Ensure the image is in RGB mode
         img = img.convert('RGB')
