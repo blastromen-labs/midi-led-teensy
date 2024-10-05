@@ -2,6 +2,10 @@ import cv2
 import numpy as np
 import os
 
+brightness_offset = 0 # -20
+contrast_factor = 1.0 # 0.9
+black_threshold = 20
+
 def convert_video_to_binary(input_file, output_file, contrast_factor=0.9, brightness_offset=-20, black_threshold=20):
     def adjust_contrast_brightness(image, contrast=1.0, brightness=0):
         return cv2.addWeighted(image, contrast, image, 0, brightness)
@@ -15,7 +19,7 @@ def convert_video_to_binary(input_file, output_file, contrast_factor=0.9, bright
             ret, frame = cap.read()
             if not ret:
                 break
-            frame = cv2.resize(frame, (32, 16))
+            frame = cv2.resize(frame, (32, 96))
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # Convert to LAB color space
@@ -42,18 +46,14 @@ def convert_video_to_binary(input_file, output_file, contrast_factor=0.9, bright
     cap.release()
 
 video_folder = '../media/videos/'
-output_folder = '../media/sd_card_files/vid'
+output_folder = '../media/videos/'
 os.makedirs(output_folder, exist_ok=True)
 
-video_files = [
-    'atom.mp4', 'atom2.mp4',
-    # 'chq.mp4', 'a.mp4', 'rr.mp4', 'hii.mp4', 'hand.mp4',
-    # 'tetra.mp4', 'packman.mp4', 'ball.mp4', 'cube_explode.mp4', 'blastrov.mp4', 'void.mp4'
-]
+video_files = ['ukko.mp4']
 
 for video_file in video_files:
     print(video_file)
     input_path = os.path.join(video_folder, video_file)
     output_path = os.path.join(output_folder, video_file.replace('.mp4', '.bin'))
-    convert_video_to_binary(input_path, output_path)
+    convert_video_to_binary(input_path, output_path, contrast_factor, brightness_offset, black_threshold)
     print(f"Converted {video_file} to {output_path}")
