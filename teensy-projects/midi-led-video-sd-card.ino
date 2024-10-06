@@ -108,6 +108,21 @@ int imageOffsetY = 0;
 int videoOffsetX = 0;
 int videoOffsetY = 0;
 
+int mapCCToOffset(int value, int maxOffset)
+{
+    // Ensure the full range of movement, including off-screen, while keeping 64 centered
+    if (value == 64)
+        return 0; // Ensure exact center at 64
+    else if (value < 64)
+    {
+        return map(value, 0, 63, -maxOffset, -1);
+    }
+    else
+    {
+        return map(value, 65, 127, 1, maxOffset);
+    }
+}
+
 void createGammaTable()
 {
     for (int i = 0; i < 256; i++)
@@ -373,21 +388,21 @@ void handleControlChange(byte channel, byte control, byte value)
         case X_POSITION_CC:
             if (channel == VIDEO_MIDI_CHANNEL)
             {
-                videoOffsetX = map(value, 0, 127, -width, width);
+                videoOffsetX = mapCCToOffset(value, width);
             }
             else if (channel == IMAGE_MIDI_CHANNEL)
             {
-                imageOffsetX = map(value, 0, 127, -width, width);
+                imageOffsetX = mapCCToOffset(value, width);
             }
             break;
         case Y_POSITION_CC:
             if (channel == VIDEO_MIDI_CHANNEL)
             {
-                videoOffsetY = map(value, 0, 127, height, -height);
+                videoOffsetY = mapCCToOffset(value, height);
             }
             else if (channel == IMAGE_MIDI_CHANNEL)
             {
-                imageOffsetY = map(value, 0, 127, height, -height);
+                imageOffsetY = mapCCToOffset(value, height);
             }
             break;
         }
@@ -515,9 +530,9 @@ void updateLEDs()
             // Apply image layer (middle layer)
             if (imageLayerActive)
             {
-                // Temporarily disable image offset
-                int imgX = x; // Was: x - imageOffsetX;
-                int imgY = y; // Was: y - imageOffsetY;
+                // Calculate image coordinates with offset
+                int imgX = x - imageOffsetX;
+                int imgY = y - imageOffsetY;
 
                 // Check if the pixel is within the image bounds
                 if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
