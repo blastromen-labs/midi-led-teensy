@@ -11,12 +11,15 @@
 // panels are stacked on top of each other in a grid of w32 x h96
 // 2 panels are connected together so that the starting index is always left top right corner.
 // updates at 5.10.24, 32,96 led panel support, disabled x,y off set via CC
+// update 6.10.24, added vertical midi note mapping and fixed the issue when Blue,Red,Green blocks were not independent
+// fix MIDI XY CC and reenable it to images
 const int NUM_PANELS = 6;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
-const int LED_MIDI_CHANNEL = 1;
-const int VIDEO_MIDI_CHANNEL = 2;
-const int IMAGE_MIDI_CHANNEL = 3;
+const int LED_MIDI_CHANNEL_LEFT = 1;
+const int LED_MIDI_CHANNEL_RIGHT = 2;
+const int VIDEO_MIDI_CHANNEL = 3;
+const int IMAGE_MIDI_CHANNEL = 4;
 
 const int totalLeds = NUM_PANELS * LEDS_PER_PANEL;
 const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
@@ -106,6 +109,21 @@ int imageOffsetY = 0;
 int videoOffsetX = 0;
 int videoOffsetY = 0;
 
+int mapCCToOffset(int value, int maxOffset)
+{
+    // Ensure the full range of movement, including off-screen, while keeping 64 centered
+    if (value == 64)
+        return 0; // Ensure exact center at 64
+    else if (value < 64)
+    {
+        return map(value, 0, 63, -maxOffset, -1);
+    }
+    else
+    {
+        return map(value, 65, 127, 1, maxOffset);
+    }
+}
+
 void createGammaTable()
 {
     for (int i = 0; i < 256; i++)
@@ -169,18 +187,34 @@ void updateGroupLeds(int group)
     int startLed = groupWithinPanel * ledsPerGroup;
     int endLed = startLed + ledsPerGroup - 1;
 
-    // Apply HSV adjustments
-    CRGB rgbColor(r, g, b);
-    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+    // Apply HSV adjustments to each color component separately
+    CRGB rgbColorR(r, 0, 0);
+    CRGB rgbColorG(0, g, 0);
+    CRGB rgbColorB(0, 0, b);
 
-    hsvColor.hue += ledBlockAdjustments.hue;
-    hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
-    hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+    CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
+    CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
+    CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
 
-    hsv2rgb_rainbow(hsvColor, rgbColor);
-    r = rgbColor.r;
-    g = rgbColor.g;
-    b = rgbColor.b;
+    hsvColorR.hue += ledBlockAdjustments.hue;
+    hsvColorG.hue += ledBlockAdjustments.hue;
+    hsvColorB.hue += ledBlockAdjustments.hue;
+
+    hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
+    hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
+    hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
+
+    hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
+    hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
+    hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
+
+    hsv2rgb_rainbow(hsvColorR, rgbColorR);
+    hsv2rgb_rainbow(hsvColorG, rgbColorG);
+    hsv2rgb_rainbow(hsvColorB, rgbColorB);
+
+    r = rgbColorR.r;
+    g = rgbColorG.g;
+    b = rgbColorB.b;
 
     for (int i = startLed; i <= endLed; i++)
     {
@@ -189,20 +223,46 @@ void updateGroupLeds(int group)
         int g_video = frameBuffer[ledIndex * 3 + 1];
         int b_video = frameBuffer[ledIndex * 3 + 2];
 
-        // Combine MIDI and video colors
-        leds.setPixel(ledIndex, max(r, r_video), max(g, g_video), max(b, b_video));
+        // Blend MIDI and video colors
+        int final_r = max(r, r_video);
+        int final_g = max(g, g_video);
+        int final_b = max(b, b_video);
+
+        leds.setPixel(ledIndex, final_r, final_g, final_b);
     }
     ledStateChanged = true;
 }
 
 void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
-    if (channel != LED_MIDI_CHANNEL || pitch < 128 - totalNotes || pitch > 127)
-        return; // Ignore notes outside our range or not on LED MIDI channel
+    if ((channel != LED_MIDI_CHANNEL_LEFT && channel != LED_MIDI_CHANNEL_RIGHT) || pitch > 127)
+        return; // Ignore notes outside our range or not on LED MIDI channels
 
     int noteIndex = 127 - pitch;
-    int colorIndex = noteIndex / numGroups;
-    int groupIndex = noteIndex % numGroups;
+
+    // Each column has 36 notes (12 for each color)
+    int columnIndex = noteIndex / 36;
+    int colorNoteIndex = noteIndex % 36;
+
+    // Determine color based on the note within the column
+    int colorIndex = colorNoteIndex / 12;
+    int rowIndex = colorNoteIndex % 12;
+
+    // Adjust column based on MIDI channel
+    if (channel == LED_MIDI_CHANNEL_RIGHT)
+    {
+        columnIndex += 2;
+    }
+
+    // Ignore notes that don't fit in our 4-column layout
+    if (columnIndex >= 4)
+    {
+        return;
+    }
+
+    // Calculate the group index based on the new mapping
+    int groupIndex = rowIndex * 4 + columnIndex;
+
     uint8_t newVelocity = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
     switch (colorIndex)
@@ -217,7 +277,7 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
         groupStates[groupIndex].green = newVelocity;
         break;
     }
-    updateLEDs();
+    updateGroupLeds(groupIndex);
 }
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
@@ -300,7 +360,7 @@ void handleControlChange(byte channel, byte control, byte value)
 {
     HSVAdjustments *adjustments = nullptr;
 
-    if (channel == LED_MIDI_CHANNEL)
+    if (channel == LED_MIDI_CHANNEL_LEFT || channel == LED_MIDI_CHANNEL_RIGHT)
     {
         adjustments = &ledBlockAdjustments;
     }
@@ -329,21 +389,21 @@ void handleControlChange(byte channel, byte control, byte value)
         case X_POSITION_CC:
             if (channel == VIDEO_MIDI_CHANNEL)
             {
-                videoOffsetX = map(value, 0, 127, -width, width);
+                videoOffsetX = mapCCToOffset(value, width);
             }
             else if (channel == IMAGE_MIDI_CHANNEL)
             {
-                imageOffsetX = map(value, 0, 127, -width, width);
+                imageOffsetX = mapCCToOffset(value, width);
             }
             break;
         case Y_POSITION_CC:
             if (channel == VIDEO_MIDI_CHANNEL)
             {
-                videoOffsetY = map(value, 0, 127, height, -height);
+                videoOffsetY = mapCCToOffset(value, height);
             }
             else if (channel == IMAGE_MIDI_CHANNEL)
             {
-                imageOffsetY = map(value, 0, 127, height, -height);
+                imageOffsetY = mapCCToOffset(value, height);
             }
             break;
         }
@@ -421,7 +481,6 @@ void updateLEDs()
         for (int x = 0; x < width; x++)
         {
             int ledIndex = mapXYtoLedIndex(x, y);
-            int bufferIndex = (y * width + x) * 3;
             int r = 0, g = 0, b = 0;
 
             // Apply video layer (bottom layer)
@@ -472,9 +531,9 @@ void updateLEDs()
             // Apply image layer (middle layer)
             if (imageLayerActive)
             {
-                // Temporarily disable image offset
-                int imgX = x; // Was: x - imageOffsetX;
-                int imgY = y; // Was: y - imageOffsetY;
+                // Calculate image coordinates with offset
+                int imgX = x - imageOffsetX;
+                int imgY = y - imageOffsetY;
 
                 // Check if the pixel is within the image bounds
                 if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
