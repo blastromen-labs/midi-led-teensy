@@ -7,9 +7,13 @@
 // latest dev version that has video and image layers, HSC for image and video and video looping and layer order and image video blending 7.9.24
 // gamma correction removed and added HSV to led blocks
 // X,Y shift for video and image layers
-const int NUM_PANELS = 2;
-const int LEDS_PER_PANEL = 256;
-const int GROUPS_PER_PANEL = 4;
+// we have 12 panels but there are always 2 pairs connected together. So 1 OctoWS2811 rj45 connector has 2 panels together, making it total 512 leds per OctoWS2811 channel.
+// panels are stacked on top of each other in a grid of w32 x h96
+// 2 panels are connected together so that the starting index is always left top right corner.
+// updates at 5.10.24, 32,96 led panel support, disabled x,y off set via CC
+const int NUM_PANELS = 6;
+const int LEDS_PER_PANEL = 512;
+const int GROUPS_PER_PANEL = 8;
 const int LED_MIDI_CHANNEL = 1;
 const int VIDEO_MIDI_CHANNEL = 2;
 const int IMAGE_MIDI_CHANNEL = 3;
@@ -19,8 +23,8 @@ const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
 const int numGroups = NUM_PANELS * GROUPS_PER_PANEL;
 const int totalNotes = numGroups * 3; // Total notes for all colors (blue, red, green)
 
-const int width = 32;
-const int height = 16;
+const int width = 32;  // Each panel is 32 LEDs wide
+const int height = 96; // 6 panels * 16 LEDs high
 
 DMAMEM int displayMemory[LEDS_PER_PANEL * 6];
 int drawingMemory[LEDS_PER_PANEL * 6];
@@ -117,38 +121,42 @@ uint8_t mapVelocityToBrightness(uint8_t velocity)
 
 int mapXYtoLedIndex(int x, int y)
 {
-    int ledIndex;
+    int panel_y = y / 16;
+    int local_y = y % 16;
+    int panel_index = panel_y;
 
-    if (y < 8)
+    int led_index = panel_index * LEDS_PER_PANEL;
+
+    if (local_y < 8)
     {
-        // Top half of the display
+        // Top half of the panel
         if (x % 2 == 0)
         {
             // Even columns go down
-            ledIndex = x * 8 + y;
+            led_index += x * 8 + local_y;
         }
         else
         {
             // Odd columns go up
-            ledIndex = x * 8 + (7 - y);
+            led_index += x * 8 + (7 - local_y);
         }
     }
     else
     {
-        // Bottom half of the display
+        // Bottom half of the panel
         if (x % 2 == 0)
         {
             // Even columns go down
-            ledIndex = 256 + x * 8 + (y - 8);
+            led_index += 256 + x * 8 + (local_y - 8);
         }
         else
         {
             // Odd columns go up
-            ledIndex = 256 + x * 8 + (15 - y);
+            led_index += 256 + x * 8 + (15 - local_y);
         }
     }
 
-    return ledIndex;
+    return led_index;
 }
 
 void updateGroupLeds(int group)
@@ -464,9 +472,9 @@ void updateLEDs()
             // Apply image layer (middle layer)
             if (imageLayerActive)
             {
-                // Calculate image coordinates with offset
-                int imgX = x - imageOffsetX;
-                int imgY = y - imageOffsetY;
+                // Temporarily disable image offset
+                int imgX = x; // Was: x - imageOffsetX;
+                int imgY = y; // Was: y - imageOffsetY;
 
                 // Check if the pixel is within the image bounds
                 if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)

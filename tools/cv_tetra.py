@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 import math
+import os
 
 # Video settings
-width, height = 320, 160
+width, height = 320, 960
 fps = 30
 duration = 10  # seconds
 total_frames = fps * duration
@@ -12,8 +13,11 @@ total_frames = fps * duration
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('spinning_tetrahedron.mp4', fourcc, fps, (width, height))
 
+# Create a binary file for 32x96 output
+binary_output = open('spinning_tetrahedron.bin', 'wb')
+
 # Tetrahedron properties
-base_tetra_size = min(width, height) * 0.3
+base_tetra_size = min(width, height) * 0.6  # Increased from 0.3 to 0.6
 tetra_colors = [
     (0, 0, 255),    # Red
     (0, 255, 0),    # Green
@@ -37,14 +41,20 @@ faces = [
     (1, 2, 3)
 ]
 
-def rotate_points(points, angle_y):
+def rotate_points(points, angle_y, angle_x):
     # Rotation matrix for y-axis rotation
     Ry = np.array([
         [math.cos(angle_y), 0, math.sin(angle_y)],
         [0, 1, 0],
         [-math.sin(angle_y), 0, math.cos(angle_y)]
     ])
-    return np.dot(points, Ry.T)
+    # Rotation matrix for x-axis rotation
+    Rx = np.array([
+        [1, 0, 0],
+        [0, math.cos(angle_x), -math.sin(angle_x)],
+        [0, math.sin(angle_x), math.cos(angle_x)]
+    ])
+    return np.dot(np.dot(points, Ry.T), Rx.T)
 
 def draw_polygon(img, points, color, depth_buffer):
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
@@ -57,13 +67,20 @@ def draw_polygon(img, points, color, depth_buffer):
             if z > 0:
                 img[y, x] = color
 
+def adjust_contrast_brightness(image, contrast=1.0, brightness=0):
+    return cv2.addWeighted(image, contrast, image, 0, brightness)
+
+def apply_black_threshold(image, threshold):
+    return np.where(image < threshold, 0, image)
+
 for frame in range(total_frames):
     # Create a black background
     img = np.zeros((height, width, 3), dtype=np.uint8)
     depth_buffer = np.full((height, width), np.inf)
 
-    # Calculate rotation angle (horizontal spin only)
-    angle_y = frame * 2 * math.pi / (fps * 5)  # Full rotation every 5 seconds
+    # Calculate rotation angles
+    angle_y = frame * 2 * math.pi / (fps * 5)  # Full horizontal rotation every 5 seconds
+    angle_x = frame * 2 * math.pi / (fps * 7)  # Full vertical rotation every 7 seconds
 
     # Calculate zoom factor (oscillating between 0.5 and 1.5)
     zoom_factor = 1 + 0.5 * math.sin(frame * 2 * math.pi / (fps * 5))
@@ -72,8 +89,8 @@ for frame in range(total_frames):
     # Apply zoom to vertices
     vertices = base_vertices * tetra_size
 
-    # Rotate the tetrahedron (horizontal spin only)
-    rotated_vertices = rotate_points(vertices, angle_y)
+    # Rotate the tetrahedron (horizontal and vertical spin)
+    rotated_vertices = rotate_points(vertices, angle_y, angle_x)
 
     # Project 3D points to 2D space (orthographic projection)
     projected_points = (rotated_vertices[:, :2] * np.array([1, -1]) + [width/2, height/2]).astype(int)
@@ -87,10 +104,39 @@ for frame in range(total_frames):
         pts = projected_points[list(face)]
         draw_polygon(img, pts, tetra_colors[i], depth_buffer)
 
-    # Write the frame
+    # Write the frame to MP4
     out.write(img)
 
-# Release the VideoWriter
+    # Process frame for binary output
+    small_frame = cv2.resize(img, (32, 96))
+    frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+
+    # Convert to LAB color space
+    lab = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L-channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
+    cl = clahe.apply(l)
+
+    # Merge the CLAHE enhanced L-channel back with A and B channels
+    limg = cv2.merge((cl,a,b))
+
+    # Convert back to RGB color space
+    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+
+    # Apply custom contrast and brightness adjustment
+    adjusted = adjust_contrast_brightness(enhanced, contrast=0.9, brightness=-20)
+
+    # Apply black threshold
+    final = apply_black_threshold(adjusted, threshold=20)
+
+    # Write to binary file
+    binary_output.write(final.astype(np.uint8).tobytes())
+
+# Release the VideoWriter and close the binary file
 out.release()
+binary_output.close()
 
 print("Video generated: spinning_tetrahedron.mp4")
+print("Binary file generated: spinning_tetrahedron.bin")
