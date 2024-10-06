@@ -14,9 +14,10 @@
 const int NUM_PANELS = 6;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
-const int LED_MIDI_CHANNEL = 1;
-const int VIDEO_MIDI_CHANNEL = 2;
-const int IMAGE_MIDI_CHANNEL = 3;
+const int LED_MIDI_CHANNEL_LEFT = 1;
+const int LED_MIDI_CHANNEL_RIGHT = 2;
+const int VIDEO_MIDI_CHANNEL = 3;
+const int IMAGE_MIDI_CHANNEL = 4;
 
 const int totalLeds = NUM_PANELS * LEDS_PER_PANEL;
 const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
@@ -169,18 +170,34 @@ void updateGroupLeds(int group)
     int startLed = groupWithinPanel * ledsPerGroup;
     int endLed = startLed + ledsPerGroup - 1;
 
-    // Apply HSV adjustments
-    CRGB rgbColor(r, g, b);
-    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+    // Apply HSV adjustments to each color component separately
+    CRGB rgbColorR(r, 0, 0);
+    CRGB rgbColorG(0, g, 0);
+    CRGB rgbColorB(0, 0, b);
 
-    hsvColor.hue += ledBlockAdjustments.hue;
-    hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
-    hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+    CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
+    CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
+    CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
 
-    hsv2rgb_rainbow(hsvColor, rgbColor);
-    r = rgbColor.r;
-    g = rgbColor.g;
-    b = rgbColor.b;
+    hsvColorR.hue += ledBlockAdjustments.hue;
+    hsvColorG.hue += ledBlockAdjustments.hue;
+    hsvColorB.hue += ledBlockAdjustments.hue;
+
+    hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
+    hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
+    hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
+
+    hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
+    hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
+    hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
+
+    hsv2rgb_rainbow(hsvColorR, rgbColorR);
+    hsv2rgb_rainbow(hsvColorG, rgbColorG);
+    hsv2rgb_rainbow(hsvColorB, rgbColorB);
+
+    r = rgbColorR.r;
+    g = rgbColorG.g;
+    b = rgbColorB.b;
 
     for (int i = startLed; i <= endLed; i++)
     {
@@ -189,20 +206,39 @@ void updateGroupLeds(int group)
         int g_video = frameBuffer[ledIndex * 3 + 1];
         int b_video = frameBuffer[ledIndex * 3 + 2];
 
-        // Combine MIDI and video colors
-        leds.setPixel(ledIndex, max(r, r_video), max(g, g_video), max(b, b_video));
+        // Blend MIDI and video colors
+        int final_r = max(r, r_video);
+        int final_g = max(g, g_video);
+        int final_b = max(b, b_video);
+
+        leds.setPixel(ledIndex, final_r, final_g, final_b);
     }
     ledStateChanged = true;
 }
 
 void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
-    if (channel != LED_MIDI_CHANNEL || pitch < 128 - totalNotes || pitch > 127)
-        return; // Ignore notes outside our range or not on LED MIDI channel
+    if ((channel != LED_MIDI_CHANNEL_LEFT && channel != LED_MIDI_CHANNEL_RIGHT) || pitch > 127)
+        return; // Ignore notes outside our range or not on LED MIDI channels
 
     int noteIndex = 127 - pitch;
-    int colorIndex = noteIndex / numGroups;
-    int groupIndex = noteIndex % numGroups;
+    int colorIndex = (noteIndex / 24) % 3; // Loop through colors every 24 notes
+    int blockIndex = noteIndex % 24;       // 24 blocks per side (12 vertical * 2 columns)
+
+    int column, row;
+    if (channel == LED_MIDI_CHANNEL_LEFT)
+    {
+        column = blockIndex / 12;
+    }
+    else
+    { // LED_MIDI_CHANNEL_RIGHT
+        column = (blockIndex / 12) + 2;
+    }
+    row = blockIndex % 12;
+
+    // Calculate the group index based on the new vertical mapping
+    int groupIndex = row * 4 + column;
+
     uint8_t newVelocity = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
     switch (colorIndex)
@@ -217,7 +253,7 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
         groupStates[groupIndex].green = newVelocity;
         break;
     }
-    updateLEDs();
+    updateGroupLeds(groupIndex);
 }
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
@@ -300,7 +336,7 @@ void handleControlChange(byte channel, byte control, byte value)
 {
     HSVAdjustments *adjustments = nullptr;
 
-    if (channel == LED_MIDI_CHANNEL)
+    if (channel == LED_MIDI_CHANNEL_LEFT || channel == LED_MIDI_CHANNEL_RIGHT)
     {
         adjustments = &ledBlockAdjustments;
     }
@@ -421,7 +457,6 @@ void updateLEDs()
         for (int x = 0; x < width; x++)
         {
             int ledIndex = mapXYtoLedIndex(x, y);
-            int bufferIndex = (y * width + x) * 3;
             int r = 0, g = 0, b = 0;
 
             // Apply video layer (bottom layer)
