@@ -11,6 +11,7 @@
 // panels are stacked on top of each other in a grid of w32 x h96
 // 2 panels are connected together so that the starting index is always left top right corner.
 // updates at 5.10.24, 32,96 led panel support, disabled x,y off set via CC
+// update 6.10.24, added vertical midi note mapping and fixed the issue when Blue,Red,Green blocks were not independent
 const int NUM_PANELS = 6;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
