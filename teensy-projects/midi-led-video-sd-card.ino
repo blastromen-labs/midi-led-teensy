@@ -223,22 +223,29 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
         return; // Ignore notes outside our range or not on LED MIDI channels
 
     int noteIndex = 127 - pitch;
-    int colorIndex = (noteIndex / 24) % 3; // Loop through colors every 24 notes
-    int blockIndex = noteIndex % 24;       // 24 blocks per side (12 vertical * 2 columns)
 
-    int column, row;
-    if (channel == LED_MIDI_CHANNEL_LEFT)
+    // Each column has 36 notes (12 for each color)
+    int columnIndex = noteIndex / 36;
+    int colorNoteIndex = noteIndex % 36;
+
+    // Determine color based on the note within the column
+    int colorIndex = colorNoteIndex / 12;
+    int rowIndex = colorNoteIndex % 12;
+
+    // Adjust column based on MIDI channel
+    if (channel == LED_MIDI_CHANNEL_RIGHT)
     {
-        column = blockIndex / 12;
+        columnIndex += 2;
     }
-    else
-    { // LED_MIDI_CHANNEL_RIGHT
-        column = (blockIndex / 12) + 2;
-    }
-    row = blockIndex % 12;
 
-    // Calculate the group index based on the new vertical mapping
-    int groupIndex = row * 4 + column;
+    // Ignore notes that don't fit in our 4-column layout
+    if (columnIndex >= 4)
+    {
+        return;
+    }
+
+    // Calculate the group index based on the new mapping
+    int groupIndex = rowIndex * 4 + columnIndex;
 
     uint8_t newVelocity = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
