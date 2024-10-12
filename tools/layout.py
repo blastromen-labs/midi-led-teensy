@@ -6,6 +6,11 @@ PANEL_HEIGHT = 32     # Height of a single panel in pixels
 NUM_COLUMNS = 5       # Number of panels horizontally
 NUM_ROWS = 3          # Number of panels vertically
 
+LEDS_PER_PANEL = PANEL_WIDTH * PANEL_HEIGHT
+
+TOTAL_WIDTH = PANEL_WIDTH * NUM_COLUMNS
+TOTAL_HEIGHT = PANEL_HEIGHT * NUM_ROWS
+
 def led_index(x, y):
     """
     Calculate the LED index for the given (x, y) coordinate in the LED matrix.
@@ -17,10 +22,6 @@ def led_index(x, y):
     Returns:
     int: The LED index corresponding to the given (x, y) coordinate.
     """
-    LEDS_PER_PANEL = PANEL_WIDTH * PANEL_HEIGHT
-
-    TOTAL_WIDTH = PANEL_WIDTH * NUM_COLUMNS
-    TOTAL_HEIGHT = PANEL_HEIGHT * NUM_ROWS
 
     if not (0 <= x < TOTAL_WIDTH) or not (0 <= y < TOTAL_HEIGHT):
         raise ValueError("Coordinates out of bounds.")
