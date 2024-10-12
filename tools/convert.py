@@ -49,7 +49,7 @@ video_folder = '../media/videos/'
 output_folder = '../media/videos/'
 os.makedirs(output_folder, exist_ok=True)
 
-video_files = ['ukko.mp4']
+video_files = ['tron96.mp4']
 
 for video_file in video_files:
     print(video_file)
