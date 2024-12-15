@@ -14,6 +14,15 @@
 // update 6.10.24, added vertical midi note mapping and fixed the issue when Blue,Red,Green blocks were not independent
 // fix MIDI XY CC and reenable it to images
 // 15.12.24, added support for 40x96 panel
+// 15.12.24 add midi channel 5 for row light up
+// panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
+// the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
+// |c-1|c-2|c-3|c-4|c-5|
+// |---|---|---|---|---|
+// |1.1|3.2|4.1|6.2|7.1|
+// |1.2|3.1|4.2|6.1|7.2|
+// |2.1|2.2|5.1|5.2|8.1|
+
 const int NUM_PANELS = 8;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
@@ -21,6 +30,9 @@ const int LED_MIDI_CHANNEL_LEFT = 1;
 const int LED_MIDI_CHANNEL_RIGHT = 2;
 const int VIDEO_MIDI_CHANNEL = 3;
 const int IMAGE_MIDI_CHANNEL = 4;
+const int ROW_MIDI_CHANNEL = 5;
+const int ROWS_PER_PANEL = 32;
+const int TOTAL_ROWS = 96;  // Total height of the display
 
 const int totalLeds = 3840;// NUM_PANELS * LEDS_PER_PANEL - (LEDS_PER_PANEL / 2); // - 256 leds since the last panel is only 256, total: 3840 leds
 const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
@@ -316,6 +328,56 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     }
 
     updateGroupLeds(groupIndex);
+}
+
+void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
+{
+    if (channel != ROW_MIDI_CHANNEL || pitch > 127)
+        return;
+
+    // Direct mapping: note 127->row 0 (first 8 LEDs), 126->row 1 (next 8 LEDs), etc.
+    int noteIndex = 127 - pitch;  // Convert MIDI note to row number
+
+    // We have 12 rows total, so each color gets 12 notes
+    const int ROWS_PER_COLOR = 12;
+
+    // Calculate which color section we're in (0=Blue, 1=Red, 2=Green)
+    int colorSection = noteIndex / ROWS_PER_COLOR;  // Switch color every 12 notes
+    int rowIndex = noteIndex % ROWS_PER_COLOR;      // Row within current color section
+
+    if (colorSection >= 3) return;  // Ignore notes beyond our 3 colors
+
+    // Convert row number to LED Y position (each row is 8 LEDs high)
+    rowIndex = rowIndex * 8;
+
+    // Set the color based on velocity
+    uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
+
+    // Light up the entire row (8 LEDs high)
+    for (int x = 0; x < width; x++) {
+        for (int y = rowIndex; y < rowIndex + 8; y++) {  // Light up all 8 LEDs in the row
+            int ledIndex = mapXYtoLedIndex(x, y);
+            int group = ledIndex / ledsPerGroup;
+
+            // Update the appropriate color based on the color section
+            switch (colorSection) {
+                case 0:  // Blue section
+                    groupStates[group].blue = brightness;
+                    break;
+                case 1:  // Red section
+                    groupStates[group].red = brightness;
+                    break;
+                case 2:  // Green section
+                    groupStates[group].green = brightness;
+                    break;
+            }
+        }
+    }
+
+    // Update all groups at once after setting the colors
+    for (int group = 0; group < numGroups; group++) {
+        updateGroupLeds(group);
+    }
 }
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
@@ -676,12 +738,14 @@ void setup()
                             {
         handleLEDNoteEvent(channel, pitch, velocity, true);
         handleVideoNoteEvent(channel, pitch, velocity, true);
-        handleImageNoteEvent(channel, pitch, velocity, true); });
+        handleImageNoteEvent(channel, pitch, velocity, true);
+        handleRowNoteEvent(channel, pitch, velocity, true); });
     usbMIDI.setHandleNoteOff([](byte channel, byte pitch, byte velocity)
                              {
         handleLEDNoteEvent(channel, pitch, velocity, false);
         handleVideoNoteEvent(channel, pitch, velocity, false);
-        handleImageNoteEvent(channel, pitch, velocity, false); });
+        handleImageNoteEvent(channel, pitch, velocity, false);
+        handleRowNoteEvent(channel, pitch, velocity, false); });
     usbMIDI.setHandleControlChange(handleControlChange);
 
     leds.begin();
