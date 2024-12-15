@@ -13,7 +13,8 @@
 // updates at 5.10.24, 32,96 led panel support, disabled x,y off set via CC
 // update 6.10.24, added vertical midi note mapping and fixed the issue when Blue,Red,Green blocks were not independent
 // fix MIDI XY CC and reenable it to images
-const int NUM_PANELS = 6;
+// 15.12.24, added support for 40x96 panel
+const int NUM_PANELS = 8;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
 const int LED_MIDI_CHANNEL_LEFT = 1;
@@ -21,13 +22,13 @@ const int LED_MIDI_CHANNEL_RIGHT = 2;
 const int VIDEO_MIDI_CHANNEL = 3;
 const int IMAGE_MIDI_CHANNEL = 4;
 
-const int totalLeds = NUM_PANELS * LEDS_PER_PANEL;
+const int totalLeds = 3840;// NUM_PANELS * LEDS_PER_PANEL - (LEDS_PER_PANEL / 2); // - 256 leds since the last panel is only 256, total: 3840 leds
 const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
 const int numGroups = NUM_PANELS * GROUPS_PER_PANEL;
 const int totalNotes = numGroups * 3; // Total notes for all colors (blue, red, green)
 
-const int width = 32;  // Each panel is 32 LEDs wide
-const int height = 96; // 6 panels * 16 LEDs high
+const int width = 40;  // Each panel is 8 wide vertically
+const int height = 96; // 3 panels vertically stacked, 1 panel is 32 wide
 
 DMAMEM int displayMemory[LEDS_PER_PANEL * 6];
 int drawingMemory[LEDS_PER_PANEL * 6];
@@ -137,44 +138,55 @@ uint8_t mapVelocityToBrightness(uint8_t velocity)
     return map(velocity, 0, 127, 0, 255);
 }
 
-int mapXYtoLedIndex(int x, int y)
-{
-    int panel_y = y / 16;
-    int local_y = y % 16;
-    int panel_index = panel_y;
+int mapXYtoLedIndex(int x, int y) {
+    const int PANEL_WIDTH = 8;       // Width of a single panel in pixels
+    const int PANEL_HEIGHT = 32;     // Height of a single panel in pixels
+    const int NUM_COLUMNS = 5;       // Number of panels horizontally
+    const int NUM_ROWS = 3;          // Number of panels vertically
 
-    int led_index = panel_index * LEDS_PER_PANEL;
+    // Determine which panel we're in
+    int panel_column = x / PANEL_WIDTH;
+    int panel_row = y / PANEL_HEIGHT;
 
-    if (local_y < 8)
-    {
-        // Top half of the panel
-        if (x % 2 == 0)
-        {
-            // Even columns go down
-            led_index += x * 8 + local_y;
-        }
-        else
-        {
-            // Odd columns go up
-            led_index += x * 8 + (7 - local_y);
-        }
-    }
-    else
-    {
-        // Bottom half of the panel
-        if (x % 2 == 0)
-        {
-            // Even columns go down
-            led_index += 256 + x * 8 + (local_y - 8);
-        }
-        else
-        {
-            // Odd columns go up
-            led_index += 256 + x * 8 + (15 - local_y);
-        }
+    // Get coordinates within the panel
+    int x_in_panel = x % PANEL_WIDTH;
+    int y_in_panel = y % PANEL_HEIGHT;
+
+    // Calculate panel index based on wiring sequence
+    int panel_index;
+    if (panel_column % 2 == 0) {
+        // Even columns: panels connected top to bottom
+        panel_index = panel_column * NUM_ROWS + panel_row;
+    } else {
+        // Odd columns: panels connected bottom to top
+        panel_index = panel_column * NUM_ROWS + (NUM_ROWS - 1 - panel_row);
     }
 
-    return led_index;
+    // Calculate LED index within panel (serpentine pattern)
+    int led_in_panel;
+    if (panel_column % 2 == 0) {
+        // Normal panel orientation
+        if (y_in_panel % 2 == 0) {
+            // Even rows go right to left
+            led_in_panel = y_in_panel * PANEL_WIDTH + (PANEL_WIDTH - 1 - x_in_panel);
+        } else {
+            // Odd rows go left to right
+            led_in_panel = y_in_panel * PANEL_WIDTH + x_in_panel;
+        }
+    } else {
+        // Reversed panel orientation
+        int y_reversed = (PANEL_HEIGHT - 1) - y_in_panel;
+        if (y_reversed % 2 == 0) {
+            // Even rows in reversed panel
+            led_in_panel = y_reversed * PANEL_WIDTH + x_in_panel;
+        } else {
+            // Odd rows in reversed panel
+            led_in_panel = y_reversed * PANEL_WIDTH + (PANEL_WIDTH - 1 - x_in_panel);
+        }
+    }
+
+    // Calculate final LED index
+    return panel_index * (PANEL_WIDTH * PANEL_HEIGHT) + led_in_panel;
 }
 
 void updateGroupLeds(int group)
@@ -233,50 +245,76 @@ void updateGroupLeds(int group)
     ledStateChanged = true;
 }
 
+// Constants for LED block layout
+const int BLOCKS_PER_PANEL = 4;  // Each panel has 4 blocks of 64 LEDs
+const int BLOCKS_PER_COLUMN = 12;  // 3 panels × 4 blocks = 12 blocks per column
+const int NUM_COLUMNS = 5;       // 5 columns of panels
+const int NUM_ROWS = 3;          // 3 rows of panels
+
 void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
     if ((channel != LED_MIDI_CHANNEL_LEFT && channel != LED_MIDI_CHANNEL_RIGHT) || pitch > 127)
-        return; // Ignore notes outside our range or not on LED MIDI channels
-
-    int noteIndex = 127 - pitch;
-
-    // Each column has 36 notes (12 for each color)
-    int columnIndex = noteIndex / 36;
-    int colorNoteIndex = noteIndex % 36;
-
-    // Determine color based on the note within the column
-    int colorIndex = colorNoteIndex / 12;
-    int rowIndex = colorNoteIndex % 12;
-
-    // Adjust column based on MIDI channel
-    if (channel == LED_MIDI_CHANNEL_RIGHT)
-    {
-        columnIndex += 2;
-    }
-
-    // Ignore notes that don't fit in our 4-column layout
-    if (columnIndex >= 4)
-    {
         return;
+
+    int noteIndex = 127 - pitch;  // Convert MIDI note to zero-based index
+
+    // Each column has 3 colors × 12 blocks = 36 notes
+    const int NOTES_PER_COLOR = BLOCKS_PER_COLUMN;  // 12 blocks
+    const int NOTES_PER_COLUMN = NOTES_PER_COLOR * 3;  // 36 notes per column (12 blue + 12 red + 12 green)
+
+    // Calculate which column and color we're targeting
+    int column;
+    if (channel == LED_MIDI_CHANNEL_LEFT) {
+        column = noteIndex / NOTES_PER_COLUMN;
+        if (column > 2) return;  // Only handle first 3 columns on channel 1
+    } else {
+        column = 3 + (noteIndex / NOTES_PER_COLUMN);  // Start from column 4 for channel 2
+        if (column > 4) return;  // Only handle columns 4-5 on channel 2
     }
 
-    // Calculate the group index based on the new mapping
-    int groupIndex = rowIndex * 4 + columnIndex;
+    int remaining = noteIndex % NOTES_PER_COLUMN;
 
-    uint8_t newVelocity = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
+    // Determine which color (0=blue, 1=red, 2=green) and position within color section
+    int colorSection = remaining / NOTES_PER_COLOR;
+    int blockInColumn = remaining % NOTES_PER_COLOR;  // 0-11 for position within column
 
-    switch (colorIndex)
-    {
-    case 0: // Blue
-        groupStates[groupIndex].blue = newVelocity;
-        break;
-    case 1: // Red
-        groupStates[groupIndex].red = newVelocity;
-        break;
-    case 2: // Green
-        groupStates[groupIndex].green = newVelocity;
-        break;
+    // Calculate which panel in the column (0-2) and which block in the panel (0-3)
+    int panelInColumn = blockInColumn / BLOCKS_PER_PANEL;  // 0-2 for panel position
+    int blockInPanel = blockInColumn % BLOCKS_PER_PANEL;   // 0-3 for block in panel
+
+    // Panel mapping based on the serpentine pattern
+    // Column 1: 1.1 → 1.2 → 2.1
+    // Column 2: 3.2 → 3.1 → 2.2
+    // Column 3: 4.1 → 4.2 → 5.1
+    // Column 4: 6.2 → 6.1 → 5.2
+    // Column 5: 7.1 → 7.2 → 8.1
+    if (column % 2 == 1) {  // Odd columns (c-2, c-4)
+        // Start from top, but panels are numbered from bottom
+        panelInColumn = 2 - panelInColumn;
+        // Reverse block order within panel
+        blockInPanel = BLOCKS_PER_PANEL - 1 - blockInPanel;
     }
+
+    // Calculate final panel index and group index
+    int panel_index = column * NUM_ROWS + panelInColumn;
+    int groupIndex = (panel_index * BLOCKS_PER_PANEL) + blockInPanel;
+
+    // Set the color based on velocity
+    uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
+
+    // Update the appropriate color based on the color section
+    switch (colorSection) {
+        case 0:  // Blue section
+            groupStates[groupIndex].blue = brightness;
+            break;
+        case 1:  // Red section
+            groupStates[groupIndex].red = brightness;
+            break;
+        case 2:  // Green section
+            groupStates[groupIndex].green = brightness;
+            break;
+    }
+
     updateGroupLeds(groupIndex);
 }
 
