@@ -1,19 +1,15 @@
-# main.py
-
-# Constants
-PANEL_WIDTH = 8       # Width of a single panel in pixels
-PANEL_HEIGHT = 32     # Height of a single panel in pixels
-NUM_COLUMNS = 5       # Number of panels horizontally
-NUM_ROWS = 3          # Number of panels vertically
-
-LEDS_PER_PANEL = PANEL_WIDTH * PANEL_HEIGHT
-
-TOTAL_WIDTH = PANEL_WIDTH * NUM_COLUMNS
-TOTAL_HEIGHT = PANEL_HEIGHT * NUM_ROWS
-
 def led_index(x, y):
     """
     Calculate the LED index for the given (x, y) coordinate in the LED matrix.
+
+    panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
+    the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
+
+    |c-1|c-2|c-3|c-4|c-5|
+    |---|---|---|---|---|
+    |1.1|3.2|4.1|6.2|7.1|
+    |1.2|3.1|4.2|6.1|7.2|
+    |2.1|2.2|5.1|5.2|8.1|
 
     Parameters:
     x (int): The x-coordinate (horizontal position) of the LED.
@@ -22,6 +18,16 @@ def led_index(x, y):
     Returns:
     int: The LED index corresponding to the given (x, y) coordinate.
     """
+
+    PANEL_WIDTH = 8       # Width of a single panel in pixels
+    PANEL_HEIGHT = 32     # Height of a single panel in pixels
+    NUM_COLUMNS = 5       # Number of panels horizontally
+    NUM_ROWS = 3          # Number of panels vertically
+
+    LEDS_PER_PANEL = PANEL_WIDTH * PANEL_HEIGHT
+
+    TOTAL_WIDTH = PANEL_WIDTH * NUM_COLUMNS
+    TOTAL_HEIGHT = PANEL_HEIGHT * NUM_ROWS
 
     if not (0 <= x < TOTAL_WIDTH) or not (0 <= y < TOTAL_HEIGHT):
         raise ValueError("Coordinates out of bounds.")
