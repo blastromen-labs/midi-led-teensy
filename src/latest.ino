@@ -15,6 +15,8 @@
 // fix MIDI XY CC and reenable it to images
 // 15.12.24, added support for 40x96 panel
 // 15.12.24 add midi channel 5 for row light up
+// 16.12.24 add midi channel 6 for strobe
+// 16.12.24 fix constants and variables
 // panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
 // the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
 // |c-1|c-2|c-3|c-4|c-5|
@@ -23,24 +25,38 @@
 // |1.2|3.1|4.2|6.1|7.2|
 // |2.1|2.2|5.1|5.2|8.1|
 
+// Panel and LED configuration
 const int NUM_PANELS = 8;
 const int LEDS_PER_PANEL = 512;
 const int GROUPS_PER_PANEL = 8;
+const int PANEL_WIDTH = 8;       // Width of a single panel in pixels
+const int PANEL_HEIGHT = 32;     // Height of a single panel in pixels
+const int NUM_COLUMNS = 5;       // Number of panels horizontally
+const int NUM_ROWS = 3;          // Number of panels vertically
+
+// Display dimensions
+const int width = 40;            // Total width (5 panels × 8 pixels)
+const int height = 96;           // Total height (3 panels × 32 pixels)
+
+// Derived constants
+const int totalLeds = 3840;      // Total number of LEDs (40 × 96)
+const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
+const int numGroups = NUM_PANELS * GROUPS_PER_PANEL;
+const int totalNotes = numGroups * 3;  // Total notes for all colors (blue, red, green)
+
+// MIDI channel assignments
 const int LED_MIDI_CHANNEL_LEFT = 1;
 const int LED_MIDI_CHANNEL_RIGHT = 2;
 const int VIDEO_MIDI_CHANNEL = 3;
 const int IMAGE_MIDI_CHANNEL = 4;
 const int ROW_MIDI_CHANNEL = 5;
+const int STROBE_MIDI_CHANNEL = 6;
+
+// Row and block configuration
 const int ROWS_PER_PANEL = 32;
-const int TOTAL_ROWS = 96;  // Total height of the display
-
-const int totalLeds = 3840;// NUM_PANELS * LEDS_PER_PANEL - (LEDS_PER_PANEL / 2); // - 256 leds since the last panel is only 256, total: 3840 leds
-const int ledsPerGroup = LEDS_PER_PANEL / GROUPS_PER_PANEL;
-const int numGroups = NUM_PANELS * GROUPS_PER_PANEL;
-const int totalNotes = numGroups * 3; // Total notes for all colors (blue, red, green)
-
-const int width = 40;  // Each panel is 8 wide vertically
-const int height = 96; // 3 panels vertically stacked, 1 panel is 32 wide
+const int TOTAL_ROWS = 96;       // Total height of the display
+const int BLOCKS_PER_PANEL = 4;  // Each panel has 4 blocks of 64 LEDs
+const int BLOCKS_PER_COLUMN = 12;  // 3 panels × 4 blocks = 12 blocks per column
 
 DMAMEM int displayMemory[LEDS_PER_PANEL * 6];
 int drawingMemory[LEDS_PER_PANEL * 6];
@@ -151,11 +167,6 @@ uint8_t mapVelocityToBrightness(uint8_t velocity)
 }
 
 int mapXYtoLedIndex(int x, int y) {
-    const int PANEL_WIDTH = 8;       // Width of a single panel in pixels
-    const int PANEL_HEIGHT = 32;     // Height of a single panel in pixels
-    const int NUM_COLUMNS = 5;       // Number of panels horizontally
-    const int NUM_ROWS = 3;          // Number of panels vertically
-
     // Determine which panel we're in
     int panel_column = x / PANEL_WIDTH;
     int panel_row = y / PANEL_HEIGHT;
@@ -256,12 +267,6 @@ void updateGroupLeds(int group)
     }
     ledStateChanged = true;
 }
-
-// Constants for LED block layout
-const int BLOCKS_PER_PANEL = 4;  // Each panel has 4 blocks of 64 LEDs
-const int BLOCKS_PER_COLUMN = 12;  // 3 panels × 4 blocks = 12 blocks per column
-const int NUM_COLUMNS = 5;       // 5 columns of panels
-const int NUM_ROWS = 3;          // 3 rows of panels
 
 void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
@@ -729,9 +734,6 @@ void updateLEDs()
     }
     ledStateChanged = true;
 }
-
-// Add new constant
-const int STROBE_MIDI_CHANNEL = 6;
 
 void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
