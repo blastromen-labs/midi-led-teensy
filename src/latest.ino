@@ -730,6 +730,182 @@ void updateLEDs()
     ledStateChanged = true;
 }
 
+// Add new constant
+const int STROBE_MIDI_CHANNEL = 6;
+
+void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
+{
+    if (channel != STROBE_MIDI_CHANNEL || pitch > 127)
+        return;
+
+    // Set the color based on velocity
+    uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
+
+    // Calculate section based on MIDI note
+    switch (pitch) {
+        case 127: // Upper half (first 6 rows)
+            for (int x = 0; x < width; x++) {
+                for (int y = 0; y < 48; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 126: // Lower half (last 6 rows)
+            for (int x = 0; x < width; x++) {
+                for (int y = 48; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 125: // Left half
+            for (int x = 0; x < width/2; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 124: // Right half
+            for (int x = width/2; x < width; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 123: // Left upper corner (3 columns, half height)
+            for (int x = 0; x < 24; x++) {  // 3 columns = 24 pixels
+                for (int y = 0; y < 48; y++) {  // Half height = 48 pixels
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 122: // Right upper corner (3 columns, half height)
+            for (int x = width - 24; x < width; x++) {
+                for (int y = 0; y < 48; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 121: // Left bottom corner (3 columns, half height)
+            for (int x = 0; x < 24; x++) {
+                for (int y = 48; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 120: // Right bottom corner (3 columns, half height)
+            for (int x = width - 24; x < width; x++) {
+                for (int y = 48; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 119: // Whole column 1
+            for (int x = 0; x < 8; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 118: // Whole column 2
+            for (int x = 8; x < 16; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 117: // Whole column 3
+            for (int x = 16; x < 24; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 116: // Whole column 4
+            for (int x = 24; x < 32; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+
+        case 115: // Whole column 5
+            for (int x = 32; x < 40; x++) {
+                for (int y = 0; y < height; y++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int group = ledIndex / ledsPerGroup;
+                    groupStates[group].red = brightness;
+                    groupStates[group].green = brightness;
+                    groupStates[group].blue = brightness;
+                }
+            }
+            break;
+    }
+
+    // Update all groups at once
+    for (int group = 0; group < numGroups; group++) {
+        updateGroupLeds(group);
+    }
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -739,13 +915,15 @@ void setup()
         handleLEDNoteEvent(channel, pitch, velocity, true);
         handleVideoNoteEvent(channel, pitch, velocity, true);
         handleImageNoteEvent(channel, pitch, velocity, true);
-        handleRowNoteEvent(channel, pitch, velocity, true); });
+        handleRowNoteEvent(channel, pitch, velocity, true);
+        handleStrobeNoteEvent(channel, pitch, velocity, true); });
     usbMIDI.setHandleNoteOff([](byte channel, byte pitch, byte velocity)
                              {
         handleLEDNoteEvent(channel, pitch, velocity, false);
         handleVideoNoteEvent(channel, pitch, velocity, false);
         handleImageNoteEvent(channel, pitch, velocity, false);
-        handleRowNoteEvent(channel, pitch, velocity, false); });
+        handleRowNoteEvent(channel, pitch, velocity, false);
+        handleStrobeNoteEvent(channel, pitch, velocity, false); });
     usbMIDI.setHandleControlChange(handleControlChange);
 
     leds.begin();
