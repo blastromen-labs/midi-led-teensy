@@ -4,18 +4,27 @@ import math
 import os
 
 # Video settings
-width, height = 320, 160
+width, height = 400, 960
 fps = 30
 duration = 30  # seconds (increased from 10 to 30)
 total_frames = fps * duration
 
 # Ensure the output directory exists
-output_dir = "../videos"
+output_dir = "../media"
 os.makedirs(output_dir, exist_ok=True)
 
 # Create a VideoWriter object
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter(os.path.join(output_dir, 'infinite_tunnel.mp4'), fourcc, fps, (width, height))
+out = cv2.VideoWriter(os.path.join(output_dir, 'tunnel.mp4'), fourcc, fps, (width, height))
+
+# Create a binary file for LED output
+binary_output = open(os.path.join(output_dir, 'tunnel.bin'), 'wb')
+
+def adjust_contrast_brightness(image, contrast=1.0, brightness=0):
+    return cv2.addWeighted(image, contrast, image, 0, brightness)
+
+def apply_black_threshold(image, threshold):
+    return np.where(image < threshold, 0, image)
 
 # Tunnel properties
 tunnel_segments = 16
@@ -83,10 +92,39 @@ for frame in range(total_frames):
                   (width//2+15, height-10),
                   ship_color, thickness=-1)  # Use -1 for filled triangle
 
-    # Write the frame
+    # Write the frame to MP4
     out.write(img)
 
-# Release the VideoWriter
-out.release()
+    # Process frame for binary output
+    small_frame = cv2.resize(img, (40, 96))
+    frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-print("Video generated: ../videos/infinite_tunnel.mp4")
+    # Convert to LAB color space
+    lab = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L-channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
+    cl = clahe.apply(l)
+
+    # Merge the CLAHE enhanced L-channel back with A and B channels
+    limg = cv2.merge((cl,a,b))
+
+    # Convert back to RGB color space
+    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+
+    # Apply custom contrast and brightness adjustment
+    adjusted = adjust_contrast_brightness(enhanced, contrast=1.2, brightness=-10)
+
+    # Apply black threshold
+    final = apply_black_threshold(adjusted, threshold=20)
+
+    # Write to binary file
+    binary_output.write(final.astype(np.uint8).tobytes())
+
+# Release the VideoWriter and close the binary file
+out.release()
+binary_output.close()
+
+print(f"Video generated: {os.path.join(output_dir, 'tunnel.mp4')}")
+print(f"Binary file generated: {os.path.join(output_dir, 'tunnel.bin')}")

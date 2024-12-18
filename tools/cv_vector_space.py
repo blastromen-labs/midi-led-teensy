@@ -3,17 +3,17 @@ import numpy as np
 import math
 
 # Video settings
-width, height = 320, 960
+width, height = 400, 960
 fps = 30
 duration = 10  # seconds
 total_frames = fps * duration
 
 # Create a VideoWriter object
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('synthwave_flying.mp4', fourcc, fps, (width, height))
+out = cv2.VideoWriter('fly.mp4', fourcc, fps, (width, height))
 
 # Create a binary file for 32x96 output
-binary_output = open('synthwave_flying.bin', 'wb')
+binary_output = open('fly.bin', 'wb')
 
 # Colors
 sun_color = (255, 255, 0)  # Yellow
@@ -82,7 +82,7 @@ for frame in range(total_frames):
     out.write(img)
 
     # Process frame for binary output
-    small_frame = cv2.resize(img, (32, 96))
+    small_frame = cv2.resize(img, (40, 96))
     frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
     # Apply custom contrast and brightness adjustment

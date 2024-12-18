@@ -1,21 +1,35 @@
 import cv2
 import numpy as np
 import math
+import os
 
 # Video settings
-scale_factor = 10
-width, height = 32 * scale_factor, 16 * scale_factor
+width, height = 400, 960
 fps = 30
 duration = 10  # seconds
 total_frames = fps * duration
 
+# Ensure the output directory exists
+output_dir = "../media"
+os.makedirs(output_dir, exist_ok=True)
+
 # Create a VideoWriter object
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('chq.mp4', fourcc, fps, (width, height))
+out = cv2.VideoWriter(os.path.join(output_dir, 'cube.mp4'), fourcc, fps, (width, height))
+
+# Create a binary file for LED output
+binary_output = open(os.path.join(output_dir, 'cube.bin'), 'wb')
+
+def adjust_contrast_brightness(image, contrast=1.0, brightness=0):
+    return cv2.addWeighted(image, contrast, image, 0, brightness)
+
+def apply_black_threshold(image, threshold):
+    return np.where(image < threshold, 0, image)
 
 # Cube properties
-cube_size = min(width, height) * 0.4
-cube_color = (255, 0, 0)  # Blue color at maximum brightness
+cube_size = min(width, height) * 0.3
+cube_color = (0, 0, 255)  # Red color
+line_thickness = 8  # Increased thickness for better visibility
 
 # Define cube vertices
 vertices = np.float32([
@@ -62,19 +76,53 @@ for frame in range(total_frames):
     # Rotate the cube
     rotated_vertices = rotate_points(vertices, angle_x, angle_y, angle_z)
 
-    # Project 3D points to 2D space
+    # Project 3D points to 2D space (centered in frame)
     projected_points = (rotated_vertices[:, :2] + [width/2, height/2]).astype(int)
 
-    # Draw the edges
+    # Draw the edges with glow effect
     for edge in edges:
         start = tuple(projected_points[edge[0]])
         end = tuple(projected_points[edge[1]])
-        cv2.line(img, start, end, cube_color, thickness=scale_factor//2)
+        # Draw thick line for base
+        cv2.line(img, start, end, cube_color, thickness=line_thickness)
 
-    # Write the frame
+    # Add glow effect
+    img_glow = cv2.GaussianBlur(img, (15, 15), 0)
+    img = cv2.addWeighted(img, 1, img_glow, 0.5, 0)
+
+    # Write the frame to MP4
     out.write(img)
 
-# Release the VideoWriter
-out.release()
+    # Process frame for binary output
+    small_frame = cv2.resize(img, (40, 96))
+    frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-print("Video generated: rotating_3d_cube_hires_max.mp4")
+    # Convert to LAB color space
+    lab = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L-channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
+    cl = clahe.apply(l)
+
+    # Merge the CLAHE enhanced L-channel back with A and B channels
+    limg = cv2.merge((cl,a,b))
+
+    # Convert back to RGB color space
+    enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+
+    # Apply custom contrast and brightness adjustment
+    adjusted = adjust_contrast_brightness(enhanced, contrast=1.2, brightness=-10)
+
+    # Apply black threshold
+    final = apply_black_threshold(adjusted, threshold=20)
+
+    # Write to binary file
+    binary_output.write(final.astype(np.uint8).tobytes())
+
+# Release the VideoWriter and close the binary file
+out.release()
+binary_output.close()
+
+print(f"Video generated: {os.path.join(output_dir, 'cube.mp4')}")
+print(f"Binary file generated: {os.path.join(output_dir, 'cube.bin')}")

@@ -5,13 +5,13 @@ import os
 import math
 
 # Video settings
-width, height = 320, 960
+width, height = 400, 960
 fps = 30
 duration = 5  # seconds
 total_frames = fps * duration
 
 # Ensure the output directory exists
-output_dir = "../videos"
+output_dir = "../media"
 os.makedirs(output_dir, exist_ok=True)
 
 # Create a VideoWriter object
@@ -98,7 +98,7 @@ for frame in range(total_frames):
     out.write(img)
 
     # Process frame for binary output
-    small_frame = cv2.resize(img, (32, 96))
+    small_frame = cv2.resize(img, (40, 96))
     frame_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
     # Convert to LAB color space
