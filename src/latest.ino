@@ -140,6 +140,11 @@ int videoOffsetY = 0;
 
 bool strobeActive[totalLeds] = {false};  // Track which LEDs are controlled by strobe
 
+bool activeVideoNotes[128] = {false};  // Track which video notes are currently active
+
+unsigned long lastVideoFrame = 0;  // Track when we last processed a video frame
+bool videoNeedsUpdate = false;     // Flag to indicate if video needs updating
+
 int mapCCToOffset(int value, int maxOffset)
 {
     // Ensure the full range of movement, including off-screen, while keeping 64 centered
@@ -273,6 +278,7 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     for (int i = startLed; i < endLed; i++) {
         if (!strobeActive[i]) {
             // Update the appropriate color based on the color section
+            // Now we only update the specific color component without affecting others
             switch (colorSection) {
                 case 0:  // Blue section
                     groupStates[groupIndex].blue = brightness;
@@ -376,6 +382,7 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
 
     if (isNoteOn)
     {
+        activeVideoNotes[pitch] = true;  // Mark this note as active
         for (int i = 0; i < numVideos; i++)
         {
             if (videoMappings[i].note == pitch)
@@ -387,7 +394,8 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     }
     else
     {
-        stopVideo();
+        activeVideoNotes[pitch] = false;  // Mark this note as inactive
+        videoNeedsUpdate = true;  // Flag that we need to check video state
     }
 }
 
@@ -696,20 +704,38 @@ void updateLEDs()
                 int lb = groupStates[group].blue;
 
                 if (lr > 0 || lg > 0 || lb > 0) {
-                    // Apply HSV adjustments to LED block colors
-                    CRGB rgbColor(lr, lg, lb);
-                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+                    // Create separate RGB colors for each component
+                    CRGB rgbColorR(lr, 0, 0);
+                    CRGB rgbColorG(0, lg, 0);
+                    CRGB rgbColorB(0, 0, lb);
 
-                    hsvColor.hue += ledBlockAdjustments.hue;
-                    hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
-                    hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+                    // Convert each to HSV
+                    CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
+                    CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
+                    CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
 
-                    hsv2rgb_rainbow(hsvColor, rgbColor);
+                    // Apply HSV adjustments to each component
+                    hsvColorR.hue += ledBlockAdjustments.hue;
+                    hsvColorG.hue += ledBlockAdjustments.hue;
+                    hsvColorB.hue += ledBlockAdjustments.hue;
 
-                    // If LED block is active, it overrides video/image layers
-                    r = rgbColor.r;
-                    g = rgbColor.g;
-                    b = rgbColor.b;
+                    hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
+                    hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
+                    hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
+
+                    hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
+                    hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
+                    hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
+
+                    // Convert back to RGB
+                    hsv2rgb_rainbow(hsvColorR, rgbColorR);
+                    hsv2rgb_rainbow(hsvColorG, rgbColorG);
+                    hsv2rgb_rainbow(hsvColorB, rgbColorB);
+
+                    // Combine the colors using maximum value for each component
+                    r = max(rgbColorR.r, max(rgbColorG.r, rgbColorB.r));
+                    g = max(rgbColorR.g, max(rgbColorG.g, rgbColorB.g));
+                    b = max(rgbColorR.b, max(rgbColorG.b, rgbColorB.b));
                 }
             }
 
@@ -904,19 +930,36 @@ void loop()
         // Process all available MIDI messages
     }
 
-    // Handle video playback
-    if (videoPlaying && millis() - lastFrameTime >= frameDelay)
+    // Check if we need to update video state
+    if (videoNeedsUpdate) {
+        bool anyVideoActive = false;
+        for (int i = 0; i < 128; i++) {
+            if (activeVideoNotes[i]) {
+                anyVideoActive = true;
+                break;
+            }
+        }
+
+        if (!anyVideoActive) {
+            stopVideo();
+        }
+        videoNeedsUpdate = false;
+    }
+
+    // Handle video playback - use consistent timing
+    unsigned long currentTime = millis();
+    if (videoPlaying && (currentTime - lastVideoFrame >= frameDelay))
     {
         if (mediaFile.available() >= totalLeds * 3)
         {
             mediaFile.read(frameBuffer, totalLeds * 3);
             updateLEDs();
-            lastFrameTime = millis();
+            lastVideoFrame = currentTime;
         }
         else if (videoLooping)
         {
-            // Reached end of file, loop back to start
             mediaFile.seek(videoStartPosition);
+            lastVideoFrame = currentTime;
         }
         else
         {
