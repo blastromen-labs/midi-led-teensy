@@ -138,6 +138,8 @@ int imageOffsetY = 0;
 int videoOffsetX = 0;
 int videoOffsetY = 0;
 
+bool strobeActive[totalLeds] = {false};  // Track which LEDs are controlled by strobe
+
 int mapCCToOffset(int value, int maxOffset)
 {
     // Ensure the full range of movement, including off-screen, while keeping 64 centered
@@ -212,62 +214,6 @@ int mapXYtoLedIndex(int x, int y) {
     return panel_index * (PANEL_WIDTH * PANEL_HEIGHT) + led_in_panel;
 }
 
-void updateGroupLeds(int group)
-{
-    uint8_t r = groupStates[group].red;
-    uint8_t g = groupStates[group].green;
-    uint8_t b = groupStates[group].blue;
-    int panelIndex = group / GROUPS_PER_PANEL;
-    int groupWithinPanel = group % GROUPS_PER_PANEL;
-    int startLed = groupWithinPanel * ledsPerGroup;
-    int endLed = startLed + ledsPerGroup - 1;
-
-    // Apply HSV adjustments to each color component separately
-    CRGB rgbColorR(r, 0, 0);
-    CRGB rgbColorG(0, g, 0);
-    CRGB rgbColorB(0, 0, b);
-
-    CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
-    CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
-    CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
-
-    hsvColorR.hue += ledBlockAdjustments.hue;
-    hsvColorG.hue += ledBlockAdjustments.hue;
-    hsvColorB.hue += ledBlockAdjustments.hue;
-
-    hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
-    hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
-    hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
-
-    hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
-    hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
-    hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
-
-    hsv2rgb_rainbow(hsvColorR, rgbColorR);
-    hsv2rgb_rainbow(hsvColorG, rgbColorG);
-    hsv2rgb_rainbow(hsvColorB, rgbColorB);
-
-    r = rgbColorR.r;
-    g = rgbColorG.g;
-    b = rgbColorB.b;
-
-    for (int i = startLed; i <= endLed; i++)
-    {
-        int ledIndex = i + panelIndex * LEDS_PER_PANEL;
-        int r_video = frameBuffer[ledIndex * 3];
-        int g_video = frameBuffer[ledIndex * 3 + 1];
-        int b_video = frameBuffer[ledIndex * 3 + 2];
-
-        // Blend MIDI and video colors
-        int final_r = max(r, r_video);
-        int final_g = max(g, g_video);
-        int final_b = max(b, b_video);
-
-        leds.setPixel(ledIndex, final_r, final_g, final_b);
-    }
-    ledStateChanged = true;
-}
-
 void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
     if ((channel != LED_MIDI_CHANNEL_LEFT && channel != LED_MIDI_CHANNEL_RIGHT) || pitch > 127)
@@ -319,20 +265,29 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     // Set the color based on velocity
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Update the appropriate color based on the color section
-    switch (colorSection) {
-        case 0:  // Blue section
-            groupStates[groupIndex].blue = brightness;
-            break;
-        case 1:  // Red section
-            groupStates[groupIndex].red = brightness;
-            break;
-        case 2:  // Green section
-            groupStates[groupIndex].green = brightness;
-            break;
+    // Get the LED index range for this group
+    int startLed = groupIndex * ledsPerGroup;
+    int endLed = startLed + ledsPerGroup;
+
+    // Only update if LED is not controlled by strobe
+    for (int i = startLed; i < endLed; i++) {
+        if (!strobeActive[i]) {
+            // Update the appropriate color based on the color section
+            switch (colorSection) {
+                case 0:  // Blue section
+                    groupStates[groupIndex].blue = brightness;
+                    break;
+                case 1:  // Red section
+                    groupStates[groupIndex].red = brightness;
+                    break;
+                case 2:  // Green section
+                    groupStates[groupIndex].green = brightness;
+                    break;
+            }
+        }
     }
 
-    updateGroupLeds(groupIndex);
+    updateLEDs();
 }
 
 void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
@@ -360,29 +315,27 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 
     // Light up the entire row (8 LEDs high)
     for (int x = 0; x < width; x++) {
-        for (int y = rowIndex; y < rowIndex + 8; y++) {  // Light up all 8 LEDs in the row
+        for (int y = rowIndex; y < rowIndex + 8; y++) {
             int ledIndex = mapXYtoLedIndex(x, y);
-            int group = ledIndex / ledsPerGroup;
-
-            // Update the appropriate color based on the color section
-            switch (colorSection) {
-                case 0:  // Blue section
-                    groupStates[group].blue = brightness;
-                    break;
-                case 1:  // Red section
-                    groupStates[group].red = brightness;
-                    break;
-                case 2:  // Green section
-                    groupStates[group].green = brightness;
-                    break;
+            // Only update if LED is not controlled by strobe
+            if (!strobeActive[ledIndex]) {
+                int group = ledIndex / ledsPerGroup;
+                switch (colorSection) {
+                    case 0:  // Blue section
+                        groupStates[group].blue = brightness;
+                        break;
+                    case 1:  // Red section
+                        groupStates[group].red = brightness;
+                        break;
+                    case 2:  // Green section
+                        groupStates[group].green = brightness;
+                        break;
+                }
             }
         }
     }
 
-    // Update all groups at once after setting the colors
-    for (int group = 0; group < numGroups; group++) {
-        updateGroupLeds(group);
-    }
+    updateLEDs();
 }
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
@@ -586,148 +539,179 @@ void updateLEDs()
         for (int x = 0; x < width; x++)
         {
             int ledIndex = mapXYtoLedIndex(x, y);
+            int group = ledIndex / ledsPerGroup;
+
+            // If this LED is controlled by strobe, use strobe values directly
+            if (strobeActive[ledIndex]) {
+                leds.setPixel(ledIndex,
+                    groupStates[group].red,
+                    groupStates[group].green,
+                    groupStates[group].blue);
+                continue;  // Skip all other processing for this LED
+            }
+
             int r = 0, g = 0, b = 0;
 
-            // Apply video layer (bottom layer)
-            if (videoPlaying)
+            // Check if strobe is active for this LED
+            // Strobe is when all RGB values are equal and non-zero
+            if (groupStates[group].red > 0 &&
+                groupStates[group].red == groupStates[group].green &&
+                groupStates[group].red == groupStates[group].blue)
             {
-                // Calculate video coordinates with offset
-                int vidX = x - videoOffsetX;
-                int vidY = y - videoOffsetY;
-
-                // Check if the pixel is within the video bounds
-                if (vidX >= 0 && vidX < width && vidY >= 0 && vidY < height)
-                {
-                    int vidBufferIndex = (vidY * width + vidX) * 3;
-                    r = frameBuffer[vidBufferIndex];
-                    g = frameBuffer[vidBufferIndex + 1];
-                    b = frameBuffer[vidBufferIndex + 2];
-
-                    // Calculate perceived brightness
-                    int brightness = (r * 77 + g * 150 + b * 29) >> 8;
-
-                    // Apply threshold to video content
-                    if (brightness > brightnessThreshold)
-                    {
-                        // Apply HSV adjustments to video
-                        CRGB rgbColor(r, g, b);
-                        CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                        hsvColor.hue += videoAdjustments.hue;
-                        hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
-                        hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
-
-                        hsv2rgb_rainbow(hsvColor, rgbColor);
-                        r = rgbColor.r;
-                        g = rgbColor.g;
-                        b = rgbColor.b;
-                    }
-                    else
-                    {
-                        r = g = b = 0;
-                    }
-                }
-                else
-                {
-                    r = g = b = 0; // Outside video bounds, set to black
-                }
+                // Use strobe values directly, no blending or modifications allowed
+                r = groupStates[group].red;
+                g = groupStates[group].green;
+                b = groupStates[group].blue;
             }
-
-            // Apply image layer (middle layer)
-            if (imageLayerActive)
+            else
             {
-                // Calculate image coordinates with offset
-                int imgX = x - imageOffsetX;
-                int imgY = y - imageOffsetY;
-
-                // Check if the pixel is within the image bounds
-                if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
+                // Clear any residual strobe values to prevent interference
+                if (groupStates[group].red == groupStates[group].green &&
+                    groupStates[group].red == groupStates[group].blue)
                 {
-                    int imgBufferIndex = (imgY * width + imgX) * 3;
-                    int ir = imageBuffer[imgBufferIndex];
-                    int ig = imageBuffer[imgBufferIndex + 1];
-                    int ib = imageBuffer[imgBufferIndex + 2];
+                    groupStates[group].red = 0;
+                    groupStates[group].green = 0;
+                    groupStates[group].blue = 0;
+                }
 
-                    // Apply brightness to the image
-                    uint8_t brightness = 255; // Default to full brightness
-                    for (int i = 0; i < numImages; i++)
+                // Apply video layer (bottom layer)
+                if (videoPlaying)
+                {
+                    // Calculate video coordinates with offset
+                    int vidX = x - videoOffsetX;
+                    int vidY = y - videoOffsetY;
+
+                    // Check if the pixel is within the video bounds
+                    if (vidX >= 0 && vidX < width && vidY >= 0 && vidY < height)
                     {
-                        if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
+                        int vidBufferIndex = (vidY * width + vidX) * 3;
+                        r = frameBuffer[vidBufferIndex];
+                        g = frameBuffer[vidBufferIndex + 1];
+                        b = frameBuffer[vidBufferIndex + 2];
+
+                        // Calculate perceived brightness
+                        int brightness = (r * 77 + g * 150 + b * 29) >> 8;
+
+                        // Apply threshold to video content
+                        if (brightness > brightnessThreshold)
                         {
-                            brightness = imageMappings[i].brightness;
-                            break;
+                            // Apply HSV adjustments to video
+                            CRGB rgbColor(r, g, b);
+                            CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                            hsvColor.hue += videoAdjustments.hue;
+                            hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
+                            hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
+
+                            hsv2rgb_rainbow(hsvColor, rgbColor);
+                            r = rgbColor.r;
+                            g = rgbColor.g;
+                            b = rgbColor.b;
+                        }
+                        else
+                        {
+                            r = g = b = 0;
                         }
                     }
-
-                    // Convert RGB to HSV
-                    CRGB rgbColor(ir, ig, ib);
-                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                    // Apply HSV adjustments
-                    hsvColor.hue += imageAdjustments.hue;
-                    hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
-                    hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
-
-                    // Convert back to RGB
-                    hsv2rgb_rainbow(hsvColor, rgbColor);
-
-                    ir = rgbColor.r;
-                    ig = rgbColor.g;
-                    ib = rgbColor.b;
-
-                    // Apply brightness
-                    ir = (ir * brightness) >> 8;
-                    ig = (ig * brightness) >> 8;
-                    ib = (ib * brightness) >> 8;
-
-                    // Determine alpha based on adjusted color intensity and original brightness
-                    float alpha;
-                    int maxAdjustedColor = max(max(ir, ig), ib);
-                    int maxOriginalColor = max(max(imageBuffer[imgBufferIndex], imageBuffer[imgBufferIndex + 1]), imageBuffer[imgBufferIndex + 2]);
-
-                    if (maxOriginalColor == 255 && brightness == 255)
-                    {
-                        // If original color was max brightness and MIDI velocity is max
-                        alpha = float(maxAdjustedColor) / 255.0f;
-                    }
                     else
                     {
-                        // Otherwise, use a blend
-                        alpha = float(maxAdjustedColor) / 255.0f * 0.5f;
+                        r = g = b = 0; // Outside video bounds, set to black
                     }
-
-                    // Alpha blending with video layer
-                    r = (1 - alpha) * r + alpha * ir;
-                    g = (1 - alpha) * g + alpha * ig;
-                    b = (1 - alpha) * b + alpha * ib;
                 }
-                // If pixel is outside image bounds, it remains transparent (video shows through)
+
+                // Apply image layer (middle layer)
+                if (imageLayerActive)
+                {
+                    // Calculate image coordinates with offset
+                    int imgX = x - imageOffsetX;
+                    int imgY = y - imageOffsetY;
+
+                    // Check if the pixel is within the image bounds
+                    if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
+                    {
+                        int imgBufferIndex = (imgY * width + imgX) * 3;
+                        int ir = imageBuffer[imgBufferIndex];
+                        int ig = imageBuffer[imgBufferIndex + 1];
+                        int ib = imageBuffer[imgBufferIndex + 2];
+
+                        // Apply brightness to the image
+                        uint8_t brightness = 255; // Default to full brightness
+                        for (int i = 0; i < numImages; i++)
+                        {
+                            if (strcmp(imageMappings[i].filename, currentImageFilename) == 0)
+                            {
+                                brightness = imageMappings[i].brightness;
+                                break;
+                            }
+                        }
+
+                        // Convert RGB to HSV
+                        CRGB rgbColor(ir, ig, ib);
+                        CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                        // Apply HSV adjustments
+                        hsvColor.hue += imageAdjustments.hue;
+                        hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
+                        hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
+
+                        // Convert back to RGB
+                        hsv2rgb_rainbow(hsvColor, rgbColor);
+
+                        ir = rgbColor.r;
+                        ig = rgbColor.g;
+                        ib = rgbColor.b;
+
+                        // Apply brightness
+                        ir = (ir * brightness) >> 8;
+                        ig = (ig * brightness) >> 8;
+                        ib = (ib * brightness) >> 8;
+
+                        // Determine alpha based on adjusted color intensity and original brightness
+                        float alpha;
+                        int maxAdjustedColor = max(max(ir, ig), ib);
+                        int maxOriginalColor = max(max(imageBuffer[imgBufferIndex], imageBuffer[imgBufferIndex + 1]), imageBuffer[imgBufferIndex + 2]);
+
+                        if (maxOriginalColor == 255 && brightness == 255)
+                        {
+                            // If original color was max brightness and MIDI velocity is max
+                            alpha = float(maxAdjustedColor) / 255.0f;
+                        }
+                        else
+                        {
+                            // Otherwise, use a blend
+                            alpha = float(maxAdjustedColor) / 255.0f * 0.5f;
+                        }
+
+                        // Alpha blending with video layer
+                        r = (1 - alpha) * r + alpha * ir;
+                        g = (1 - alpha) * g + alpha * ig;
+                        b = (1 - alpha) * b + alpha * ib;
+                    }
+                    // If pixel is outside image bounds, it remains transparent (video shows through)
+                }
+
+                // Apply LED block layer (top layer, but below strobe)
+                int lr = groupStates[group].red;
+                int lg = groupStates[group].green;
+                int lb = groupStates[group].blue;
+
+                if (lr > 0 || lg > 0 || lb > 0) {
+                    // Apply HSV adjustments to LED block colors
+                    CRGB rgbColor(lr, lg, lb);
+                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                    hsvColor.hue += ledBlockAdjustments.hue;
+                    hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
+                    hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
+
+                    hsv2rgb_rainbow(hsvColor, rgbColor);
+
+                    // If LED block is active, it overrides video/image layers
+                    r = rgbColor.r;
+                    g = rgbColor.g;
+                    b = rgbColor.b;
+                }
             }
-
-            // Apply LED block layer (top layer)
-            int group = ledIndex / ledsPerGroup;
-            int lr = groupStates[group].red;
-            int lg = groupStates[group].green;
-            int lb = groupStates[group].blue;
-
-            // Apply HSV adjustments to LED block colors
-            CRGB rgbColor(lr, lg, lb);
-            CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-            hsvColor.hue += ledBlockAdjustments.hue;
-            hsvColor.saturation = scale8(hsvColor.saturation, ledBlockAdjustments.saturation);
-            hsvColor.value = scale8(hsvColor.value, ledBlockAdjustments.value);
-
-            hsv2rgb_rainbow(hsvColor, rgbColor);
-            lr = rgbColor.r;
-            lg = rgbColor.g;
-            lb = rgbColor.b;
-
-            // Alpha blending with LED block layer
-            float ledAlpha = (lr + lg + lb) > 0 ? 1.0f : 0.0f; // Simple binary alpha
-            r = (1 - ledAlpha) * r + ledAlpha * lr;
-            g = (1 - ledAlpha) * g + ledAlpha * lg;
-            b = (1 - ledAlpha) * b + ledAlpha * lb;
 
             leds.setPixel(ledIndex, r, g, b);
         }
@@ -740,172 +724,140 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
     if (channel != STROBE_MIDI_CHANNEL || pitch > 127)
         return;
 
-    // Set the color based on velocity
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Calculate section based on MIDI note
-    switch (pitch) {
-        case 127: // Upper half (first 6 rows)
-            for (int x = 0; x < width; x++) {
-                for (int y = 0; y < 48; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
+    // Helper function to set strobe state with color
+    auto setStrobeState = [&](int x, int y, bool state, bool isWhite, bool isRed, bool isGreen, bool isBlue) {
+        int ledIndex = mapXYtoLedIndex(x, y);
+        int group = ledIndex / ledsPerGroup;
+        strobeActive[ledIndex] = state;
+        if (state && brightness > 0) {
+            groupStates[group].red = isWhite || isRed ? brightness : 0;
+            groupStates[group].green = isWhite || isGreen ? brightness : 0;
+            groupStates[group].blue = isWhite || isBlue ? brightness : 0;
+        } else {
+            if (isRed) groupStates[group].red = 0;
+            if (isGreen) groupStates[group].green = 0;
+            if (isBlue) groupStates[group].blue = 0;
+            if (isWhite) {
+                groupStates[group].red = 0;
+                groupStates[group].green = 0;
+                groupStates[group].blue = 0;
             }
-            break;
+        }
+    };
 
-        case 126: // Lower half (last 6 rows)
-            for (int x = 0; x < width; x++) {
-                for (int y = 48; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
+    // Pattern generator function
+    auto applyPattern = [&](int startX, int endX, int startY, int endY, bool isWhite, bool isRed, bool isGreen, bool isBlue) {
+        for (int x = startX; x < endX; x++) {
+            for (int y = startY; y < endY; y++) {
+                setStrobeState(x, y, isNoteOn, isWhite, isRed, isGreen, isBlue);
             }
-            break;
+        }
+    };
 
-        case 125: // Left half
-            for (int x = 0; x < width/2; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
-            break;
+    // Determine color and pattern based on note range
+    bool isWhite = pitch >= 115;                    // 127-115: White
+    bool isBlue = pitch >= 102 && pitch < 115;      // 114-102: Blue
+    bool isRed = pitch >= 89 && pitch < 102;        // 101-89: Red
+    bool isGreen = pitch >= 76 && pitch < 89;       // 88-76: Green
+    bool isCyan = pitch >= 63 && pitch < 76;        // 75-63: Cyan (Blue + Green)
+    bool isMagenta = pitch >= 50 && pitch < 63;     // 62-50: Magenta (Blue + Red)
+    bool isYellow = pitch >= 37 && pitch < 50;      // 49-37: Yellow (Red + Green)
 
-        case 124: // Right half
-            for (int x = width/2; x < width; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
-            break;
+    // Calculate pattern index within each color range
+    int patternIndex;
+    if (isWhite) patternIndex = 127 - pitch;        // 0-12 for white
+    else if (isBlue) patternIndex = 114 - pitch;    // 0-12 for blue
+    else if (isRed) patternIndex = 101 - pitch;     // 0-12 for red
+    else if (isGreen) patternIndex = 88 - pitch;    // 0-12 for green
+    else if (isCyan) patternIndex = 75 - pitch;     // 0-12 for cyan
+    else if (isMagenta) patternIndex = 62 - pitch;  // 0-12 for magenta
+    else patternIndex = 49 - pitch;                 // 0-12 for yellow
 
-        case 123: // Left upper corner (3 columns, half height)
-            for (int x = 0; x < 24; x++) {  // 3 columns = 24 pixels
-                for (int y = 0; y < 48; y++) {  // Half height = 48 pixels
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+    // Apply the appropriate pattern in the correct order
+    switch (patternIndex) {
+        case 0:  // Upper half
+            applyPattern(0, width, 0, 48, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 122: // Right upper corner (3 columns, half height)
-            for (int x = width - 24; x < width; x++) {
-                for (int y = 0; y < 48; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 1:  // Lower half
+            applyPattern(0, width, 48, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 121: // Left bottom corner (3 columns, half height)
-            for (int x = 0; x < 24; x++) {
-                for (int y = 48; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 2:  // Left half
+            applyPattern(0, width/2, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 120: // Right bottom corner (3 columns, half height)
-            for (int x = width - 24; x < width; x++) {
-                for (int y = 48; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 3:  // Right half
+            applyPattern(width/2, width, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 119: // Whole column 1
-            for (int x = 0; x < 8; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 4:  // Left upper corner
+            applyPattern(0, 24, 0, 48, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 118: // Whole column 2
-            for (int x = 8; x < 16; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 5:  // Right upper corner
+            applyPattern(width - 24, width, 0, 48, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 117: // Whole column 3
-            for (int x = 16; x < 24; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 6:  // Left bottom corner
+            applyPattern(0, 24, 48, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 116: // Whole column 4
-            for (int x = 24; x < 32; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 7:  // Right bottom corner
+            applyPattern(width - 24, width, 48, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
             break;
-
-        case 115: // Whole column 5
-            for (int x = 32; x < 40; x++) {
-                for (int y = 0; y < height; y++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int group = ledIndex / ledsPerGroup;
-                    groupStates[group].red = brightness;
-                    groupStates[group].green = brightness;
-                    groupStates[group].blue = brightness;
-                }
-            }
+        case 8:  // Column 1
+            applyPattern(0, 8, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
+            break;
+        case 9:  // Column 2
+            applyPattern(8, 16, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
+            break;
+        case 10: // Column 3
+            applyPattern(16, 24, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
+            break;
+        case 11: // Column 4
+            applyPattern(24, 32, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,     // Red component
+                        isGreen || isCyan || isYellow,      // Green component
+                        isBlue || isCyan || isMagenta);     // Blue component
+            break;
+        case 12: // Column 5
+            applyPattern(32, 40, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,
+                        isGreen || isCyan || isYellow,
+                        isBlue || isCyan || isMagenta);
             break;
     }
 
-    // Update all groups at once
-    for (int group = 0; group < numGroups; group++) {
-        updateGroupLeds(group);
-    }
+    updateLEDs();
 }
 
 void setup()
