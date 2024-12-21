@@ -19,7 +19,7 @@ def convert_video_to_binary(input_file, output_file, contrast_factor=0.9, bright
             ret, frame = cap.read()
             if not ret:
                 break
-            frame = cv2.resize(frame, (32, 96))
+            frame = cv2.resize(frame, (40, 96))
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # Convert to LAB color space
@@ -45,8 +45,8 @@ def convert_video_to_binary(input_file, output_file, contrast_factor=0.9, bright
             f.write(final.astype(np.uint8).tobytes())
     cap.release()
 
-video_folder = '../media/videos/'
-output_folder = '../media/videos/'
+video_folder = '../media/'
+output_folder = '../media/'
 os.makedirs(output_folder, exist_ok=True)
 
 video_files = ['tron96.mp4']
