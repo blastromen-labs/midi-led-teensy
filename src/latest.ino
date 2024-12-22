@@ -293,7 +293,7 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
         }
     }
 
-    updateLEDs();
+    ledStateChanged = true;
 }
 
 void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
@@ -341,7 +341,7 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
         }
     }
 
-    updateLEDs();
+    ledStateChanged = true;
 }
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
@@ -473,7 +473,7 @@ void handleControlChange(byte channel, byte control, byte value)
             }
             break;
         }
-        updateLEDs();
+        ledStateChanged = true;
     }
 }
 
@@ -883,7 +883,16 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
             break;
     }
 
-    updateLEDs();
+    ledStateChanged = true;
+}
+
+bool anyVideoNotesActive() {
+    for (int i = 0; i < 128; i++) {
+        if (activeVideoNotes[i]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void setup()
@@ -924,37 +933,31 @@ void setup()
 
 void loop()
 {
-    // Handle MIDI messages
-    while (usbMIDI.read())
-    {
-        // Process all available MIDI messages
+    unsigned long currentTime = millis();
+    static const int MAX_MIDI_MESSAGES_PER_LOOP = 10;
+    int midi_messages_processed = 0;
+
+    // Process limited number of MIDI messages
+    while (usbMIDI.read() && midi_messages_processed < MAX_MIDI_MESSAGES_PER_LOOP) {
+        midi_messages_processed++;
     }
 
     // Check if we need to update video state
     if (videoNeedsUpdate) {
-        bool anyVideoActive = false;
-        for (int i = 0; i < 128; i++) {
-            if (activeVideoNotes[i]) {
-                anyVideoActive = true;
-                break;
-            }
-        }
-
-        if (!anyVideoActive) {
+        if (!anyVideoNotesActive()) {
             stopVideo();
         }
         videoNeedsUpdate = false;
     }
 
-    // Handle video playback - use consistent timing
-    unsigned long currentTime = millis();
+    // Handle video playback
     if (videoPlaying && (currentTime - lastVideoFrame >= frameDelay))
     {
         if (mediaFile.available() >= totalLeds * 3)
         {
             mediaFile.read(frameBuffer, totalLeds * 3);
-            updateLEDs();
             lastVideoFrame = currentTime;
+            ledStateChanged = true;  // Mark for update
         }
         else if (videoLooping)
         {
@@ -967,9 +970,10 @@ void loop()
         }
     }
 
-    // Update LEDs if state has changed
+    // Update LEDs only once per loop if needed
     if (ledStateChanged && !leds.busy())
     {
+        updateLEDs();
         leds.show();
         ledStateChanged = false;
     }
