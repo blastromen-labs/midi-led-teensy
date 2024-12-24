@@ -895,6 +895,25 @@ bool anyVideoNotesActive() {
     return false;
 }
 
+void startupTest() {
+    // Flash first 768 LEDs in blue 3 times
+    for (int flash = 0; flash < 3; flash++) {
+        // Turn on blue
+        for (int i = 0; i < 768; i++) {
+            leds.setPixel(i, 0, 0, 255);  // Blue at full brightness
+        }
+        leds.show();
+        delay(500);  // Wait 0.5 second
+
+        // Turn off
+        for (int i = 0; i < 768; i++) {
+            leds.setPixel(i, 0, 0, 0);  // All off
+        }
+        leds.show();
+        delay(500);  // Wait 0.5 second
+    }
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -929,17 +948,16 @@ void setup()
     loadMappings("image_map.txt", imageMappings, numImages);
 
     createGammaTable(); // Create gamma correction table
+
+    startupTest(); // Run the startup test sequence
 }
 
 void loop()
 {
     unsigned long currentTime = millis();
-    static const int MAX_MIDI_MESSAGES_PER_LOOP = 10;
-    int midi_messages_processed = 0;
-
-    // Process limited number of MIDI messages
-    while (usbMIDI.read() && midi_messages_processed < MAX_MIDI_MESSAGES_PER_LOOP) {
-        midi_messages_processed++;
+    while (usbMIDI.read())
+    {
+        // Process all available MIDI messages
     }
 
     // Check if we need to update video state
