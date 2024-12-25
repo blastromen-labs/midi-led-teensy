@@ -3,6 +3,8 @@ import numpy as np
 import os
 import argparse
 
+BRIGHTNESS_THRESHOLD = 0.05
+
 def convert_video(input_file, output_name=None):
     # Check if input file exists
     if not os.path.exists(input_file):
@@ -106,7 +108,7 @@ def convert_video(input_file, output_name=None):
         adjusted = adjust_contrast_brightness(enhanced, contrast=1.2, brightness=-10)
 
         # Apply brightness-based black threshold
-        final = apply_black_threshold(adjusted, brightness_threshold=0.2)  # 20% threshold
+        final = apply_black_threshold(adjusted, brightness_threshold=BRIGHTNESS_THRESHOLD)
 
         # Write to binary file
         binary_output.write(final.astype(np.uint8).tobytes())
