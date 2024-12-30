@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 
-BRIGHTNESS_THRESHOLD = 0.05  # 5% brightness threshold
+BRIGHTNESS_THRESHOLD = 0.10  # 5% brightness threshold
 TARGET_FPS = 30  # Target frame rate for LED display
 
 def convert_mov(input_file, output_name=None, high_contrast=False):
@@ -45,7 +45,7 @@ def convert_mov(input_file, output_name=None, high_contrast=False):
         if high_contrast:
             # More aggressive brightness adjustment for high contrast mode
             v_channel = np.power(v_channel, 1.5)  # Darken mid-tones
-            threshold = 0.15  # Higher threshold for black
+            threshold = 0.20  # Higher threshold for black
         else:
             threshold = BRIGHTNESS_THRESHOLD
 
