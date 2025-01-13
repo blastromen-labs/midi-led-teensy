@@ -918,6 +918,12 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
                         isGreen || isCyan || isYellow,
                         isBlue || isCyan || isMagenta);
             break;
+        case 12: // Column 5
+            applyPattern(32, 40, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,
+                        isGreen || isCyan || isYellow,
+                        isBlue || isCyan || isMagenta);
+            break;
     }
 
     ledStateChanged = true;
