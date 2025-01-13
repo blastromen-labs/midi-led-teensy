@@ -19,6 +19,7 @@
 // 16.12.24 fix constants and variables
 // panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
 // the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
+// 13.1.25, add midi CC for video speed and direction. You need to explicitly set the CC 6 to 64 to have normal speed.
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
