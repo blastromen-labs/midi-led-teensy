@@ -19,6 +19,7 @@
 // 16.12.24 fix constants and variables
 // panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
 // the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
+// 13.1.25, add midi CC for video speed and direction. You need to explicitly set the CC 6 to 64 to have normal speed.
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -90,7 +91,7 @@ const int chipSelect = BUILTIN_SDCARD;
 File mediaFile;
 bool imageDisplayed = false;
 unsigned long lastFrameTime = 0;
-const unsigned long frameDelay = 33; // ~30 fps
+const unsigned long frameDelay = 33; // Keep this for ~30 fps base rate
 
 const int MAX_MAPPINGS = 20; // Maximum number of video/image mappings
 
@@ -129,7 +130,7 @@ HSVAdjustments videoAdjustments = {0, 255, 255};    // Default to no adjustment
 HSVAdjustments imageAdjustments = {0, 255, 255};    // Default to no adjustment
 HSVAdjustments ledBlockAdjustments = {0, 255, 255}; // Default to no adjustment
 
-bool videoLooping = false;
+bool videoLooping = true;  // Set to true by default, or add a MIDI CC to control it
 unsigned long videoStartPosition = 0;
 unsigned long videoFileSize = 0;
 
@@ -144,6 +145,16 @@ bool activeVideoNotes[128] = {false};  // Track which video notes are currently 
 
 unsigned long lastVideoFrame = 0;  // Track when we last processed a video frame
 bool videoNeedsUpdate = false;     // Flag to indicate if video needs updating
+
+// Add this constant with other CC definitions
+const int VIDEO_SPEED_CC = 6;  // CC #6 for video speed control
+const int VIDEO_DIRECTION_CC = 7; // CC #7 for video direction control
+
+// Add this variable with other global variables
+float videoPlaybackSpeed = 1.0f;  // Default normal speed
+bool videoSpeedModified = false;  // Track if speed has been modified by CC
+bool videoReversed = false;        // Track video direction
+bool videoDirectionModified = false; // Track if direction has been modified by CC
 
 int mapCCToOffset(int value, int maxOffset)
 {
@@ -349,8 +360,6 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
     File mapFile = SD.open(filename, FILE_READ);
     if (!mapFile)
     {
-        Serial.print("Failed to open ");
-        Serial.println(filename);
         return;
     }
 
@@ -369,34 +378,39 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
     }
 
     mapFile.close();
-    Serial.print("Loaded ");
-    Serial.print(count);
-    Serial.print(" mappings from ");
-    Serial.println(filename);
 }
 
 void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 {
-    if (channel != VIDEO_MIDI_CHANNEL)
+    if (channel != VIDEO_MIDI_CHANNEL) {
         return;
+    }
 
-    if (isNoteOn)
-    {
-        activeVideoNotes[pitch] = true;  // Mark this note as active
-        for (int i = 0; i < numVideos; i++)
-        {
-            if (videoMappings[i].note == pitch)
-            {
+    if (isNoteOn && velocity > 0) {
+        // First, clear any existing video if this is a new note
+        if (videoPlaying) {
+            stopVideo();  // Stop current video immediately
+            // Clear all active notes to ensure clean state
+            memset(activeVideoNotes, 0, sizeof(activeVideoNotes));
+        }
+
+        // Mark the new note as active
+        activeVideoNotes[pitch] = true;
+
+        // Look up and start the new video
+        for (int i = 0; i < numVideos; i++) {
+            if (videoMappings[i].note == pitch) {
                 startVideo(videoMappings[i].filename);
                 return;
             }
         }
     }
-    else
-    {
-        activeVideoNotes[pitch] = false;  // Mark this note as inactive
-        videoNeedsUpdate = true;  // Flag that we need to check video state
+    else {
+        // Note off
+        activeVideoNotes[pitch] = false;
     }
+
+    videoNeedsUpdate = true;
 }
 
 void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
@@ -426,13 +440,34 @@ void handleControlChange(byte channel, byte control, byte value)
 {
     HSVAdjustments *adjustments = nullptr;
 
-    if (channel == LED_MIDI_CHANNEL_LEFT || channel == LED_MIDI_CHANNEL_RIGHT)
+    if (channel == VIDEO_MIDI_CHANNEL) {
+        if (control == VIDEO_DIRECTION_CC) {
+            videoDirectionModified = true;
+            videoReversed = (value == 127);  // Reverse at max value only
+            return;
+        }
+        else if (control == VIDEO_SPEED_CC) {
+            videoSpeedModified = true;
+            if (value == 0) {
+                videoPlaybackSpeed = 0.0f;  // Stop playback
+            } else if (value == 64) {
+                videoPlaybackSpeed = 1.0f;  // Normal speed
+            } else if (value < 64) {
+                // Exponential scaling for slower speeds
+                float normalized = (value - 1) / 63.0f;  // 0 to 1
+                videoPlaybackSpeed = 0.25f + (pow(normalized, 2) * 0.75f);  // Exponential curve from 0.25x to 1x
+            } else {
+                // Exponential scaling for faster speeds
+                float normalized = (value - 64) / 63.0f;  // 0 to 1
+                videoPlaybackSpeed = pow(64, normalized);  // Exponential curve up to 64x
+            }
+            return;
+        }
+        adjustments = &videoAdjustments;
+    }
+    else if (channel == LED_MIDI_CHANNEL_LEFT || channel == LED_MIDI_CHANNEL_RIGHT)
     {
         adjustments = &ledBlockAdjustments;
-    }
-    else if (channel == VIDEO_MIDI_CHANNEL)
-    {
-        adjustments = &videoAdjustments;
     }
     else if (channel == IMAGE_MIDI_CHANNEL)
     {
@@ -477,38 +512,53 @@ void handleControlChange(byte channel, byte control, byte value)
     }
 }
 
-void startVideo(const char *filename)
+void startVideo(const char* filename)
 {
-    if (videoPlaying)
-    {
-        mediaFile.close();
+    if (videoPlaying) {
+        stopVideo();
     }
+
     mediaFile = SD.open(filename, FILE_READ);
-    if (mediaFile)
-    {
-        videoPlaying = true;
-        videoLooping = true;
-        lastFrameTime = millis();
-        videoStartPosition = mediaFile.position();
-        videoFileSize = mediaFile.size();
-        Serial.print("Started video: ");
-        Serial.println(filename);
+    if (!mediaFile) {
+        return;
     }
-    else
-    {
-        Serial.print("Failed to open video file: ");
-        Serial.println(filename);
+
+    videoPlaying = true;
+    videoFileSize = mediaFile.size();
+    const unsigned long frameSize = totalLeds * 3;
+
+    if (videoDirectionModified && videoReversed) {
+        unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+        if (lastFramePos >= frameSize) {
+            lastFramePos -= frameSize;
+        }
+        mediaFile.seek(lastFramePos);
+        videoStartPosition = lastFramePos;
+
+        if (mediaFile.available()) {
+            mediaFile.read(frameBuffer, frameSize);
+            ledStateChanged = true;
+        }
+    } else {
+        videoStartPosition = 0;
+        mediaFile.seek(videoStartPosition);
     }
+
+    lastVideoFrame = millis();
 }
 
 void stopVideo()
 {
-    videoPlaying = false;
-    videoLooping = false;
-    mediaFile.close();
-    memset(frameBuffer, 0, sizeof(frameBuffer));
-    updateLEDs();
-    Serial.println("Stopped video");
+    if (videoPlaying) {
+        if (mediaFile) {
+            mediaFile.close();
+        }
+        videoPlaying = false;
+        videoFileSize = 0;
+        videoStartPosition = 0;
+        memset(frameBuffer, 0, totalLeds * 3);
+        ledStateChanged = true;
+    }
 }
 
 void startImage(const char *filename)
@@ -521,8 +571,6 @@ void startImage(const char *filename)
         imageLayerActive = true;
         strncpy(currentImageFilename, filename, 12); // Copy at most 12 characters
         currentImageFilename[12] = '\0';             // Ensure null-termination
-        Serial.print("Started image: ");
-        Serial.println(filename);
         updateLEDs();
     }
     else
@@ -871,9 +919,9 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
             break;
         case 11: // Column 4
             applyPattern(24, 32, 0, height, isWhite,
-                        isRed || isMagenta || isYellow,     // Red component
-                        isGreen || isCyan || isYellow,      // Green component
-                        isBlue || isCyan || isMagenta);     // Blue component
+                        isRed || isMagenta || isYellow,
+                        isGreen || isCyan || isYellow,
+                        isBlue || isCyan || isMagenta);
             break;
         case 12: // Column 5
             applyPattern(32, 40, 0, height, isWhite,
@@ -954,13 +1002,12 @@ void setup()
 
 void loop()
 {
-    unsigned long currentTime = millis();
-    while (usbMIDI.read())
-    {
-        // Process all available MIDI messages
+    // Keep the MIDI read loop
+    while (usbMIDI.read()) {
+        // Process MIDI messages
     }
 
-    // Check if we need to update video state
+    // Stop video if no active notes remain:
     if (videoNeedsUpdate) {
         if (!anyVideoNotesActive()) {
             stopVideo();
@@ -968,29 +1015,98 @@ void loop()
         videoNeedsUpdate = false;
     }
 
-    // Handle video playback
-    if (videoPlaying && (currentTime - lastVideoFrame >= frameDelay))
-    {
-        if (mediaFile.available() >= totalLeds * 3)
-        {
-            mediaFile.read(frameBuffer, totalLeds * 3);
-            lastVideoFrame = currentTime;
-            ledStateChanged = true;  // Mark for update
-        }
-        else if (videoLooping)
-        {
+    // If video is playing but no data is available, handle looping or stop
+    if (videoPlaying && !mediaFile.available()) {
+        if (videoLooping) {
             mediaFile.seek(videoStartPosition);
-            lastVideoFrame = currentTime;
-        }
-        else
-        {
+        } else {
             stopVideo();
         }
     }
 
-    // Update LEDs only once per loop if needed
-    if (ledStateChanged && !leds.busy())
+    // Decide direction & speed
+    bool isReversed = videoDirectionModified ? videoReversed : false;
+    float currentSpeed = videoSpeedModified ? videoPlaybackSpeed : 1.0f;
+    unsigned long currentTime = millis();
+
+    // Compute delay for frames. If speed=0 => large delay (paused)
+    unsigned long adjustedDelay = (currentSpeed > 0.0f)
+        ? (frameDelay / currentSpeed)
+        : 99999999UL; // effectively pause
+
+    // Read frame if enough time has passed
+    if (videoPlaying && (currentTime - lastVideoFrame >= adjustedDelay))
     {
+        const unsigned long frameSize = totalLeds * 3;
+
+        if (isReversed) {
+            // Handle reverse playback
+            unsigned long currentPos = mediaFile.position();
+
+            if (currentPos >= frameSize * 2) {
+                // Normal case: move back two frames
+                mediaFile.seek(currentPos - frameSize * 2);
+            }
+            else if (currentPos >= frameSize) {
+                // Near start: move back one frame
+                mediaFile.seek(currentPos - frameSize);
+            }
+            else if (videoLooping) {
+                // At start and looping: jump to last complete frame
+                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                if (lastFramePos >= frameSize) {
+                    mediaFile.seek(lastFramePos - frameSize);
+                }
+            }
+            else {
+                // At start and not looping: stop
+                stopVideo();
+                return;
+            }
+        }
+
+        // Read the frame
+        if (mediaFile.available()) {
+            mediaFile.read(frameBuffer, frameSize);
+            lastVideoFrame = currentTime;
+            ledStateChanged = true;
+
+            if (isReversed && mediaFile.position() <= frameSize) {
+                if (videoLooping) {
+                    // If we're at the start and looping, jump to end
+                    unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                    if (lastFramePos >= frameSize) {
+                        mediaFile.seek(lastFramePos - frameSize);
+                    }
+                }
+            }
+        }
+        else if (videoLooping) {
+            if (isReversed) {
+                // Jump to last frame for reverse loop
+                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                if (lastFramePos >= frameSize) {
+                    mediaFile.seek(lastFramePos - frameSize);
+                }
+            } else {
+                // Jump to start for forward loop
+                mediaFile.seek(videoStartPosition);
+            }
+
+            // Try reading again after seeking
+            if (mediaFile.available()) {
+                mediaFile.read(frameBuffer, frameSize);
+                lastVideoFrame = currentTime;
+                ledStateChanged = true;
+            }
+        }
+        else {
+            stopVideo();
+        }
+    }
+
+    // Update LEDs if needed
+    if (ledStateChanged && !leds.busy()) {
         updateLEDs();
         leds.show();
         ledStateChanged = false;
