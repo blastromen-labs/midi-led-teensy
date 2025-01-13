@@ -450,11 +450,15 @@ void handleControlChange(byte channel, byte control, byte value)
             if (value == 0) {
                 videoPlaybackSpeed = 0.0f;  // Stop playback
             } else if (value == 64) {
-                videoPlaybackSpeed = 1.0f;
+                videoPlaybackSpeed = 1.0f;  // Normal speed
             } else if (value < 64) {
-                videoPlaybackSpeed = 0.25f + ((value - 1) / 63.0f) * 0.75f;
+                // Exponential scaling for slower speeds
+                float normalized = (value - 1) / 63.0f;  // 0 to 1
+                videoPlaybackSpeed = 0.25f + (pow(normalized, 2) * 0.75f);  // Exponential curve from 0.25x to 1x
             } else {
-                videoPlaybackSpeed = 1.0f + ((value - 64) / 63.0f) * 63.0f;  // Up to 64x
+                // Exponential scaling for faster speeds
+                float normalized = (value - 64) / 63.0f;  // 0 to 1
+                videoPlaybackSpeed = pow(64, normalized);  // Exponential curve up to 64x
             }
             return;
         }
