@@ -19,7 +19,8 @@
 // 16.12.24 fix constants and variables
 // panels are stacked vertically, with the first panel being the top left, and the last panel being the bottom right.
 // the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
-// 13.1.25, add midi CC for video speed and direction. You need to explicitly set the CC 6 to 64 to have normal speed.
+// 13.1.25, add midi CC for video speed and direction.
+// 14.1.25, add midi CC for video scale.
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -59,8 +60,9 @@ const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
 const int X_POSITION_CC = 4;
 const int Y_POSITION_CC = 5;
-const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal speed, and CC 10 is perfect since it is Panning CC
+const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal speed, CC 10 is good since it is Panning CC
 const int VIDEO_DIRECTION_CC = 7;
+const int VIDEO_SCALE_CC = 8;  // Expression controller for video scaling, CC 8 is good since this is balance and defaults to 64
 
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
@@ -154,6 +156,9 @@ float videoPlaybackSpeed = 1.0f;  // Default normal speed
 bool videoSpeedModified = false;  // Track if speed has been modified by CC
 bool videoReversed = false;        // Track video direction
 bool videoDirectionModified = false; // Track if direction has been modified by CC
+
+float videoScale = 1.0f;        // Default scale
+bool videoScaleModified = false; // Track if scale has been modified
 
 int mapCCToOffset(int value, int maxOffset)
 {
@@ -442,7 +447,7 @@ void handleControlChange(byte channel, byte control, byte value)
     if (channel == VIDEO_MIDI_CHANNEL) {
         if (control == VIDEO_DIRECTION_CC) {
             videoDirectionModified = true;
-            videoReversed = (value == 127);  // Reverse at max value only
+            videoReversed = (value == 127);
             return;
         }
         else if (control == VIDEO_SPEED_CC) {
@@ -459,6 +464,21 @@ void handleControlChange(byte channel, byte control, byte value)
                 // Exponential scaling for faster speeds
                 float normalized = (value - 64) / 63.0f;  // 0 to 1
                 videoPlaybackSpeed = pow(64, normalized);  // Exponential curve up to 64x
+            }
+            return;
+        }
+        else if (control == VIDEO_SCALE_CC) {
+            videoScaleModified = true;
+            if (value == 64) {
+                videoScale = 1.0f;  // Normal size
+            } else if (value < 64) {
+                // Exponential scaling for smaller sizes (0.25x to 1x)
+                float normalized = value / 64.0f;  // 0 to 1
+                videoScale = 0.25f + (pow(normalized, 2) * 0.75f);
+            } else {
+                // Exponential scaling for larger sizes (1x to 4x)
+                float normalized = (value - 64) / 63.0f;  // 0 to 1
+                videoScale = 1.0f + (pow(normalized, 2) * 3.0f);  // Up to 4x
             }
             return;
         }
@@ -632,14 +652,24 @@ void updateLEDs()
                 // Apply video layer (bottom layer)
                 if (videoPlaying)
                 {
-                    // Calculate video coordinates with offset
-                    int vidX = x - videoOffsetX;
-                    int vidY = y - videoOffsetY;
+                    // Calculate scaled coordinates
+                    float scale = videoScaleModified ? videoScale : 1.0f;
+
+                    // Calculate center point for scaling
+                    int centerX = width / 2;
+                    int centerY = height / 2;
+
+                    // Calculate video coordinates with offset and scaling
+                    float vidX = (x - centerX) / scale + centerX - videoOffsetX;
+                    float vidY = (y - centerY) / scale + centerY - videoOffsetY;
 
                     // Check if the pixel is within the video bounds
-                    if (vidX >= 0 && vidX < width && vidY >= 0 && vidY < height)
-                    {
-                        int vidBufferIndex = (vidY * width + vidX) * 3;
+                    if (vidX >= 0 && vidX < width && vidY >= 0 && vidY < height) {
+                        // Convert to integer coordinates
+                        int srcX = (int)vidX;
+                        int srcY = (int)vidY;
+
+                        int vidBufferIndex = (srcY * width + srcX) * 3;
                         r = frameBuffer[vidBufferIndex];
                         g = frameBuffer[vidBufferIndex + 1];
                         b = frameBuffer[vidBufferIndex + 2];
