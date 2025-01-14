@@ -53,6 +53,15 @@ const int IMAGE_MIDI_CHANNEL = 4;
 const int ROW_MIDI_CHANNEL = 5;
 const int STROBE_MIDI_CHANNEL = 6;
 
+// MIDI CC assignments
+const int HUE_CC = 1;
+const int SATURATION_CC = 2;
+const int VALUE_CC = 3;
+const int X_POSITION_CC = 4;
+const int Y_POSITION_CC = 5;
+const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal speed, and CC 10 is perfect since it is Panning CC
+const int VIDEO_DIRECTION_CC = 7;
+
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
 const int TOTAL_ROWS = 96;       // Total height of the display
@@ -113,12 +122,6 @@ uint8_t gammaTable[256];
 
 char currentImageFilename[13] = {0}; // To store the current image filename
 
-const int HUE_CC = 1;
-const int SATURATION_CC = 2;
-const int VALUE_CC = 3;
-const int X_POSITION_CC = 4;
-const int Y_POSITION_CC = 5;
-
 struct HSVAdjustments
 {
     uint8_t hue;
@@ -145,10 +148,6 @@ bool activeVideoNotes[128] = {false};  // Track which video notes are currently 
 
 unsigned long lastVideoFrame = 0;  // Track when we last processed a video frame
 bool videoNeedsUpdate = false;     // Flag to indicate if video needs updating
-
-// Add this constant with other CC definitions
-const int VIDEO_SPEED_CC = 6;  // CC #6 for video speed control
-const int VIDEO_DIRECTION_CC = 7; // CC #7 for video direction control
 
 // Add this variable with other global variables
 float videoPlaybackSpeed = 1.0f;  // Default normal speed
