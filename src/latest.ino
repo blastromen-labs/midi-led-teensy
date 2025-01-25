@@ -991,9 +991,67 @@ void startupTest() {
     }
 }
 
+// Add these constants with other definitions
+const int SERIAL_BUFFER_SIZE = totalLeds * 3;  // Size of one frame
+const bool USE_SERIAL_VIDEO = true;  // Toggle between SD and Serial video
+
+// Add these variables with other globals
+byte serialBuffer[SERIAL_BUFFER_SIZE];
+bool serialVideoActive = false;
+unsigned long serialFrameCount = 0;
+unsigned long lastSerialFpsTime = 0;
+
+// Simplified serial video handler based on working example
+void handleSerialVideo() {
+    if (Serial.available() > 0) {
+        int bytesRead = Serial.readBytes(serialBuffer, SERIAL_BUFFER_SIZE);
+
+        if (bytesRead == SERIAL_BUFFER_SIZE) {
+            // Copy to frame buffer
+            memcpy(frameBuffer, serialBuffer, SERIAL_BUFFER_SIZE);
+            serialVideoActive = true;
+
+            // Update LEDs using proper XY mapping
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int ledIndex = mapXYtoLedIndex(x, y);
+                    int bufferIndex = (y * width + x) * 3;
+
+                    // Get RGB values from buffer
+                    int r = frameBuffer[bufferIndex];
+                    int g = frameBuffer[bufferIndex + 1];
+                    int b = frameBuffer[bufferIndex + 2];
+
+                    // Calculate perceived brightness
+                    int brightness = (r * 77 + g * 150 + b * 29) >> 8;
+
+                    // Apply threshold if needed
+                    if (brightness > brightnessThreshold) {
+                        leds.setPixel(ledIndex, r, g, b);
+                    } else {
+                        leds.setPixel(ledIndex, 0, 0, 0);
+                    }
+                }
+            }
+            leds.show();  // Show immediately
+
+            serialFrameCount++;
+
+            // Calculate and show FPS every second
+            unsigned long now = millis();
+            if (now - lastSerialFpsTime >= 1000) {
+                float fps = serialFrameCount * 1000.0f / (now - lastSerialFpsTime);
+                Serial.printf("Serial Video FPS: %.1f\n", fps);
+                serialFrameCount = 0;
+                lastSerialFpsTime = now;
+            }
+        }
+    }
+}
+
 void setup()
 {
-    Serial.begin(9600);
+    Serial.begin(2000000);  // Use 2Mbaud for faster transfer
     usbMIDI.begin();
     usbMIDI.setHandleNoteOn([](byte channel, byte pitch, byte velocity)
                             {
@@ -1031,106 +1089,110 @@ void setup()
 
 void loop()
 {
-    // Keep the MIDI read loop
     while (usbMIDI.read()) {
         // Process MIDI messages
     }
 
-    // Stop video if no active notes remain:
-    if (videoNeedsUpdate) {
-        if (!anyVideoNotesActive()) {
-            stopVideo();
-        }
-        videoNeedsUpdate = false;
-    }
-
-    // If video is playing but no data is available, handle looping or stop
-    if (videoPlaying && !mediaFile.available()) {
-        if (videoLooping) {
-            mediaFile.seek(videoStartPosition);
-        } else {
-            stopVideo();
-        }
-    }
-
-    // Decide direction & speed
-    bool isReversed = videoDirectionModified ? videoReversed : false;
-    float currentSpeed = videoSpeedModified ? videoPlaybackSpeed : 1.0f;
-    unsigned long currentTime = millis();
-
-    // Compute delay for frames. If speed=0 => large delay (paused)
-    unsigned long adjustedDelay = (currentSpeed > 0.0f)
-        ? (frameDelay / currentSpeed)
-        : 99999999UL; // effectively pause
-
-    // Read frame if enough time has passed
-    if (videoPlaying && (currentTime - lastVideoFrame >= adjustedDelay))
-    {
-        const unsigned long frameSize = totalLeds * 3;
-
-        if (isReversed) {
-            // Handle reverse playback
-            unsigned long currentPos = mediaFile.position();
-
-            if (currentPos >= frameSize * 2) {
-                // Normal case: move back two frames
-                mediaFile.seek(currentPos - frameSize * 2);
-            }
-            else if (currentPos >= frameSize) {
-                // Near start: move back one frame
-                mediaFile.seek(currentPos - frameSize);
-            }
-            else if (videoLooping) {
-                // At start and looping: jump to last complete frame
-                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
-                if (lastFramePos >= frameSize) {
-                    mediaFile.seek(lastFramePos - frameSize);
-                }
-            }
-            else {
-                // At start and not looping: stop
+    if (USE_SERIAL_VIDEO) {
+        // Handle serial video stream
+        handleSerialVideo();
+    } else {
+        // Existing SD card video logic
+        if (videoNeedsUpdate) {
+            if (!anyVideoNotesActive()) {
                 stopVideo();
-                return;
+            }
+            videoNeedsUpdate = false;
+        }
+
+        // If video is playing but no data is available, handle looping or stop
+        if (videoPlaying && !mediaFile.available()) {
+            if (videoLooping) {
+                mediaFile.seek(videoStartPosition);
+            } else {
+                stopVideo();
             }
         }
 
-        // Read the frame
-        if (mediaFile.available()) {
-            mediaFile.read(frameBuffer, frameSize);
-            lastVideoFrame = currentTime;
-            ledStateChanged = true;
+        // Decide direction & speed
+        bool isReversed = videoDirectionModified ? videoReversed : false;
+        float currentSpeed = videoSpeedModified ? videoPlaybackSpeed : 1.0f;
+        unsigned long currentTime = millis();
 
-            if (isReversed && mediaFile.position() <= frameSize) {
-                if (videoLooping) {
-                    // If we're at the start and looping, jump to end
+        // Compute delay for frames. If speed=0 => large delay (paused)
+        unsigned long adjustedDelay = (currentSpeed > 0.0f)
+            ? (frameDelay / currentSpeed)
+            : 99999999UL; // effectively pause
+
+        // Read frame if enough time has passed
+        if (videoPlaying && (currentTime - lastVideoFrame >= adjustedDelay))
+        {
+            const unsigned long frameSize = totalLeds * 3;
+
+            if (isReversed) {
+                // Handle reverse playback
+                unsigned long currentPos = mediaFile.position();
+
+                if (currentPos >= frameSize * 2) {
+                    // Normal case: move back two frames
+                    mediaFile.seek(currentPos - frameSize * 2);
+                }
+                else if (currentPos >= frameSize) {
+                    // Near start: move back one frame
+                    mediaFile.seek(currentPos - frameSize);
+                }
+                else if (videoLooping) {
+                    // At start and looping: jump to last complete frame
                     unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
                     if (lastFramePos >= frameSize) {
                         mediaFile.seek(lastFramePos - frameSize);
                     }
                 }
-            }
-        }
-        else if (videoLooping) {
-            if (isReversed) {
-                // Jump to last frame for reverse loop
-                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
-                if (lastFramePos >= frameSize) {
-                    mediaFile.seek(lastFramePos - frameSize);
+                else {
+                    // At start and not looping: stop
+                    stopVideo();
+                    return;
                 }
-            } else {
-                // Jump to start for forward loop
-                mediaFile.seek(videoStartPosition);
             }
 
-            // Try reading again after seeking
+            // Read the frame
             if (mediaFile.available()) {
                 mediaFile.read(frameBuffer, frameSize);
                 lastVideoFrame = currentTime;
                 ledStateChanged = true;
+
+                if (isReversed && mediaFile.position() <= frameSize) {
+                    if (videoLooping) {
+                        // If we're at the start and looping, jump to end
+                        unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                        if (lastFramePos >= frameSize) {
+                            mediaFile.seek(lastFramePos - frameSize);
+                        }
+                    }
+                }
             }
-        }
-        else {
-            stopVideo();
+            else if (videoLooping) {
+                if (isReversed) {
+                    // Jump to last frame for reverse loop
+                    unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                    if (lastFramePos >= frameSize) {
+                        mediaFile.seek(lastFramePos - frameSize);
+                    }
+                } else {
+                    // Jump to start for forward loop
+                    mediaFile.seek(videoStartPosition);
+                }
+
+                // Try reading again after seeking
+                if (mediaFile.available()) {
+                    mediaFile.read(frameBuffer, frameSize);
+                    lastVideoFrame = currentTime;
+                    ledStateChanged = true;
+                }
+            }
+            else {
+                stopVideo();
+            }
         }
     }
 
