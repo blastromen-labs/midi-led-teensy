@@ -21,6 +21,7 @@
 // the panels are wired in a serpentine pattern, with the first panel being the top left, and the last panel being the bottom right.
 // 13.1.25, add midi CC for video speed and direction.
 // 14.1.25, add midi CC for video scale.
+// 25.1.25, add video stream from serial port
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -994,57 +995,169 @@ void startupTest() {
 // Add these constants with other definitions
 const int SERIAL_BUFFER_SIZE = totalLeds * 3;  // Size of one frame
 const bool USE_SERIAL_VIDEO = true;  // Toggle between SD and Serial video
+const unsigned long SERIAL_TIMEOUT = 1000;  // Timeout after 1 second of no data
 
 // Add these variables with other globals
 byte serialBuffer[SERIAL_BUFFER_SIZE];
 bool serialVideoActive = false;
 unsigned long serialFrameCount = 0;
 unsigned long lastSerialFpsTime = 0;
+unsigned long lastSerialDataTime = 0;  // Track when we last received data
+bool wasSerialActive = false;  // Track if serial video was active in previous loop
+bool serialStreamActive = false;  // Tracks if we're currently receiving a stream
 
-// Simplified serial video handler based on working example
+// Add this function with other utility functions
+void clearScreen() {
+    // Clear all LEDs
+    for (int i = 0; i < totalLeds; i++) {
+        leds.setPixel(i, 0, 0, 0);
+    }
+    leds.show();
+
+    // Clear frame buffer
+    memset(frameBuffer, 0, SERIAL_BUFFER_SIZE);
+}
+
+// Modify handleSerialVideo to use clearScreen
 void handleSerialVideo() {
-    if (Serial.available() > 0) {
-        int bytesRead = Serial.readBytes(serialBuffer, SERIAL_BUFFER_SIZE);
+    unsigned long currentTime = millis();
+    int bytesRead = Serial.readBytes((char*)serialBuffer, SERIAL_BUFFER_SIZE);
 
-        if (bytesRead == SERIAL_BUFFER_SIZE) {
-            // Copy to frame buffer
-            memcpy(frameBuffer, serialBuffer, SERIAL_BUFFER_SIZE);
-            serialVideoActive = true;
+    if (bytesRead == SERIAL_BUFFER_SIZE) {
+        // Mark stream as active
+        if (!serialStreamActive) {
+            serialStreamActive = true;
+            Serial.println("Serial video stream started");
+        }
 
-            // Update LEDs using proper XY mapping
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    int ledIndex = mapXYtoLedIndex(x, y);
-                    int bufferIndex = (y * width + x) * 3;
+        // Copy to frame buffer and update display
+        memcpy(frameBuffer, serialBuffer, SERIAL_BUFFER_SIZE);
+        lastSerialDataTime = currentTime;
 
-                    // Get RGB values from buffer
-                    int r = frameBuffer[bufferIndex];
-                    int g = frameBuffer[bufferIndex + 1];
-                    int b = frameBuffer[bufferIndex + 2];
+        // Update LEDs using proper XY mapping
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int ledIndex = mapXYtoLedIndex(x, y);
+                int bufferIndex = (y * width + x) * 3;
 
-                    // Calculate perceived brightness
-                    int brightness = (r * 77 + g * 150 + b * 29) >> 8;
+                int r = frameBuffer[bufferIndex];
+                int g = frameBuffer[bufferIndex + 1];
+                int b = frameBuffer[bufferIndex + 2];
 
-                    // Apply threshold if needed
-                    if (brightness > brightnessThreshold) {
-                        leds.setPixel(ledIndex, r, g, b);
-                    } else {
-                        leds.setPixel(ledIndex, 0, 0, 0);
+                int brightness = (r * 77 + g * 150 + b * 29) >> 8;
+
+                if (brightness > brightnessThreshold) {
+                    leds.setPixel(ledIndex, r, g, b);
+                } else {
+                    leds.setPixel(ledIndex, 0, 0, 0);
+                }
+            }
+        }
+
+        if (!leds.busy()) {
+            leds.show();
+        }
+
+        serialFrameCount++;
+
+        // FPS calculation
+        if (currentTime - lastSerialFpsTime >= 1000) {
+            float fps = serialFrameCount * 1000.0f / (currentTime - lastSerialFpsTime);
+            Serial.printf("Serial Video FPS: %.1f\n", fps);
+            serialFrameCount = 0;
+            lastSerialFpsTime = currentTime;
+        }
+    }
+}
+
+// Add this function to handle SD card video
+void handleSDVideo() {
+    if (videoNeedsUpdate) {
+        if (!anyVideoNotesActive()) {
+            stopVideo();
+        }
+        videoNeedsUpdate = false;
+    }
+
+    // If video is playing but no data is available, handle looping or stop
+    if (videoPlaying && !mediaFile.available()) {
+        if (videoLooping) {
+            mediaFile.seek(videoStartPosition);
+        } else {
+            stopVideo();
+        }
+    }
+
+    // Decide direction & speed
+    bool isReversed = videoDirectionModified ? videoReversed : false;
+    float currentSpeed = videoSpeedModified ? videoPlaybackSpeed : 1.0f;
+    unsigned long currentTime = millis();
+
+    // Compute delay for frames. If speed=0 => large delay (paused)
+    unsigned long adjustedDelay = (currentSpeed > 0.0f)
+        ? (frameDelay / currentSpeed)
+        : 99999999UL; // effectively pause
+
+    // Read frame if enough time has passed
+    if (videoPlaying && (currentTime - lastVideoFrame >= adjustedDelay)) {
+        const unsigned long frameSize = totalLeds * 3;
+
+        if (isReversed) {
+            // Handle reverse playback
+            unsigned long currentPos = mediaFile.position();
+
+            if (currentPos >= frameSize * 2) {
+                mediaFile.seek(currentPos - frameSize * 2);
+            }
+            else if (currentPos >= frameSize) {
+                mediaFile.seek(currentPos - frameSize);
+            }
+            else if (videoLooping) {
+                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                if (lastFramePos >= frameSize) {
+                    mediaFile.seek(lastFramePos - frameSize);
+                }
+            }
+            else {
+                stopVideo();
+                return;
+            }
+        }
+
+        // Read the frame
+        if (mediaFile.available()) {
+            mediaFile.read(frameBuffer, frameSize);
+            lastVideoFrame = currentTime;
+            ledStateChanged = true;
+
+            if (isReversed && mediaFile.position() <= frameSize) {
+                if (videoLooping) {
+                    unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                    if (lastFramePos >= frameSize) {
+                        mediaFile.seek(lastFramePos - frameSize);
                     }
                 }
             }
-            leds.show();  // Show immediately
-
-            serialFrameCount++;
-
-            // Calculate and show FPS every second
-            unsigned long now = millis();
-            if (now - lastSerialFpsTime >= 1000) {
-                float fps = serialFrameCount * 1000.0f / (now - lastSerialFpsTime);
-                Serial.printf("Serial Video FPS: %.1f\n", fps);
-                serialFrameCount = 0;
-                lastSerialFpsTime = now;
+        }
+        else if (videoLooping) {
+            if (isReversed) {
+                unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
+                if (lastFramePos >= frameSize) {
+                    mediaFile.seek(lastFramePos - frameSize);
+                }
+            } else {
+                mediaFile.seek(videoStartPosition);
             }
+
+            // Try reading again after seeking
+            if (mediaFile.available()) {
+                mediaFile.read(frameBuffer, frameSize);
+                lastVideoFrame = currentTime;
+                ledStateChanged = true;
+            }
+        }
+        else {
+            stopVideo();
         }
     }
 }
@@ -1093,107 +1206,24 @@ void loop()
         // Process MIDI messages
     }
 
-    if (USE_SERIAL_VIDEO) {
-        // Handle serial video stream
+    unsigned long currentTime = millis();
+
+    // Handle serial video
+    if (Serial.available() > 0) {
         handleSerialVideo();
-    } else {
-        // Existing SD card video logic
-        if (videoNeedsUpdate) {
-            if (!anyVideoNotesActive()) {
-                stopVideo();
-            }
-            videoNeedsUpdate = false;
-        }
+    }
+    // Check for stream end or timeout
+    else if (serialStreamActive && (currentTime - lastSerialDataTime > SERIAL_TIMEOUT)) {
+        clearScreen();
+        serialStreamActive = false;
+        Serial.println("Serial video stream ended - cleared LEDs");
 
-        // If video is playing but no data is available, handle looping or stop
-        if (videoPlaying && !mediaFile.available()) {
-            if (videoLooping) {
-                mediaFile.seek(videoStartPosition);
-            } else {
-                stopVideo();
-            }
-        }
-
-        // Decide direction & speed
-        bool isReversed = videoDirectionModified ? videoReversed : false;
-        float currentSpeed = videoSpeedModified ? videoPlaybackSpeed : 1.0f;
-        unsigned long currentTime = millis();
-
-        // Compute delay for frames. If speed=0 => large delay (paused)
-        unsigned long adjustedDelay = (currentSpeed > 0.0f)
-            ? (frameDelay / currentSpeed)
-            : 99999999UL; // effectively pause
-
-        // Read frame if enough time has passed
-        if (videoPlaying && (currentTime - lastVideoFrame >= adjustedDelay))
-        {
-            const unsigned long frameSize = totalLeds * 3;
-
-            if (isReversed) {
-                // Handle reverse playback
-                unsigned long currentPos = mediaFile.position();
-
-                if (currentPos >= frameSize * 2) {
-                    // Normal case: move back two frames
-                    mediaFile.seek(currentPos - frameSize * 2);
-                }
-                else if (currentPos >= frameSize) {
-                    // Near start: move back one frame
-                    mediaFile.seek(currentPos - frameSize);
-                }
-                else if (videoLooping) {
-                    // At start and looping: jump to last complete frame
-                    unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
-                    if (lastFramePos >= frameSize) {
-                        mediaFile.seek(lastFramePos - frameSize);
-                    }
-                }
-                else {
-                    // At start and not looping: stop
-                    stopVideo();
-                    return;
-                }
-            }
-
-            // Read the frame
-            if (mediaFile.available()) {
-                mediaFile.read(frameBuffer, frameSize);
-                lastVideoFrame = currentTime;
-                ledStateChanged = true;
-
-                if (isReversed && mediaFile.position() <= frameSize) {
-                    if (videoLooping) {
-                        // If we're at the start and looping, jump to end
-                        unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
-                        if (lastFramePos >= frameSize) {
-                            mediaFile.seek(lastFramePos - frameSize);
-                        }
-                    }
-                }
-            }
-            else if (videoLooping) {
-                if (isReversed) {
-                    // Jump to last frame for reverse loop
-                    unsigned long lastFramePos = videoFileSize - (videoFileSize % frameSize);
-                    if (lastFramePos >= frameSize) {
-                        mediaFile.seek(lastFramePos - frameSize);
-                    }
-                } else {
-                    // Jump to start for forward loop
-                    mediaFile.seek(videoStartPosition);
-                }
-
-                // Try reading again after seeking
-                if (mediaFile.available()) {
-                    mediaFile.read(frameBuffer, frameSize);
-                    lastVideoFrame = currentTime;
-                    ledStateChanged = true;
-                }
-            }
-            else {
-                stopVideo();
-            }
-        }
+        // Fall back to SD video
+        handleSDVideo();
+    }
+    // Normal SD video handling when no serial stream is active
+    else if (!serialStreamActive) {
+        handleSDVideo();
     }
 
     // Update LEDs if needed
