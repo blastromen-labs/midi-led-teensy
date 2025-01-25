@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>LED Panel Video Streamer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+
+        .info {
+            background-color: #d9edf7;
+            color: #31708f;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>LED Panel Video Streamer</h1>
+
+        <div>
+            <button id="connectButton">Connect to Teensy</button>
+            <input type="file" id="fileInput" accept=".bin" />
+            <button id="streamButton" disabled>Start Streaming</button>
+            <button id="stopButton" disabled>Stop</button>
+        </div>
+
+        <div id="status" class="info">Ready to connect...</div>
+        <div id="fps">FPS: 0</div>
+    </div>
+
+    <script>
+        const FRAME_SIZE = 40 * 96 * 3;  // width * height * RGB
+        const CHUNK_SIZE = 1024;         // Send in 1KB chunks
+        const TARGET_FPS = 30;
+        const FRAME_TIME = 1000 / TARGET_FPS;
+
+        let port;
+        let isStreaming = false;
+        let frameCount = 0;
+        let lastFpsTime = 0;
+        let streamInterval;
+
+        // Connect to Teensy
+        async function connect() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 2000000 });
+
+                document.getElementById('status').className = 'success';
+                document.getElementById('status').textContent = 'Connected to Teensy';
+                document.getElementById('streamButton').disabled = false;
+                document.getElementById('connectButton').disabled = true;
+            } catch (error) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Connection failed: ' + error;
+            }
+        }
+
+        // Stream binary file
+        async function streamFile(file) {
+            const reader = new FileReader();
+            let fileData;
+            let position = 0;
+
+            reader.onload = async function (e) {
+                fileData = new Uint8Array(e.target.result);
+                const totalFrames = Math.floor(fileData.length / FRAME_SIZE);
+
+                document.getElementById('status').className = 'info';
+                document.getElementById('status').textContent =
+                    `Streaming: ${file.name} (${totalFrames} frames)`;
+
+                // Start streaming loop
+                streamInterval = setInterval(async () => {
+                    if (!isStreaming) return;
+
+                    const now = performance.now();
+
+                    // Read one frame
+                    if (position >= fileData.length) {
+                        position = 0; // Loop back to start
+                    }
+
+                    const frameData = fileData.slice(position, position + FRAME_SIZE);
+                    position += FRAME_SIZE;
+
+                    // Send frame in chunks
+                    for (let i = 0; i < frameData.length; i += CHUNK_SIZE) {
+                        const chunk = frameData.slice(i, i + CHUNK_SIZE);
+                        const writer = port.writable.getWriter();
+                        await writer.write(chunk);
+                        writer.releaseLock();
+                        await new Promise(resolve => setTimeout(resolve, 1)); // Small delay
+                    }
+
+                    // Update FPS counter
+                    frameCount++;
+                    if (now - lastFpsTime >= 1000) {
+                        const fps = frameCount;
+                        document.getElementById('fps').textContent = `FPS: ${fps}`;
+                        frameCount = 0;
+                        lastFpsTime = now;
+                    }
+                }, FRAME_TIME);
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Event Listeners
+        document.getElementById('connectButton').onclick = connect;
+
+        document.getElementById('streamButton').onclick = async () => {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Please select a file';
+                return;
+            }
+
+            isStreaming = true;
+            document.getElementById('streamButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+            streamFile(file);
+        };
+
+        document.getElementById('stopButton').onclick = () => {
+            isStreaming = false;
+            clearInterval(streamInterval);
+            document.getElementById('streamButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            document.getElementById('status').className = 'info';
+            document.getElementById('status').textContent = 'Streaming stopped';
+        };
+
+        // Check if WebSerial is supported
+        if (!navigator.serial) {
+            document.getElementById('status').className = 'error';
+            document.getElementById('status').textContent =
+                'WebSerial is not supported in this browser. Please use Chrome or Edge.';
+            document.getElementById('connectButton').disabled = true;
+        }
+    </script>
+</body>
+
+</html>
