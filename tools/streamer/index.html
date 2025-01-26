@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>LED Panel Video Streamer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .container {
+            border: 1px solid #333;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #242424;
+            max-width: none;
+            margin: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px 0;
+            cursor: pointer;
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #4a4a4a;
+        }
+
+        button:disabled {
+            background-color: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .success {
+            background-color: #1b3320;
+            color: #4caf50;
+            border: 1px solid #2d592f;
+        }
+
+        .error {
+            background-color: #331b1b;
+            color: #f44336;
+            border: 1px solid #592d2d;
+        }
+
+        .info {
+            background-color: #1b2433;
+            color: #2196f3;
+            border: 1px solid #2d4159;
+        }
+
+        #preview {
+            max-width: 400px;
+            margin: 20px 0;
+            background-color: #000;
+            border: 1px solid #333;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #2a2a2a;
+            border-radius: 5px;
+            border: 1px solid #333;
+        }
+
+        .control-group {
+            margin: 15px 0;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #e0e0e0;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            max-width: 400px;
+            background-color: #3a3a3a;
+            height: 6px;
+            border-radius: 3px;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4a90e2;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #4a90e2;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .control-group span {
+            margin-left: 10px;
+            color: #4a90e2;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #e0e0e0;
+        }
+
+        input[type="checkbox"] {
+            margin: 0;
+            width: 16px;
+            height: 16px;
+            accent-color: #4a90e2;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            background-color: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #e0e0e0;
+            margin: 0 10px;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background-color: #4a90e2;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        #fps {
+            color: #4a90e2;
+            font-family: monospace;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        h1 {
+            color: #4a90e2;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: #4a90e2;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            color: #4a90e2;
+            font-family: monospace;
+        }
+
+        #downloadBinButton {
+            background-color: #2d4159;
+            color: #4a90e2;
+            border-color: #4a90e2;
+        }
+
+        #downloadBinButton:hover {
+            background-color: #4a90e2;
+            color: #fff;
+        }
+
+        #downloadBinButton:disabled {
+            background-color: #2a2a2a;
+            color: #666;
+            border-color: #444;
+        }
+
+        .preview-container {
+            display: flex;
+            gap: 20px;
+            justify-content: flex-start;
+            flex-wrap: nowrap;
+        }
+
+        .preview-box {
+            flex: 0 0 auto;
+            max-width: none;
+        }
+
+        .preview-box h3 {
+            color: #4a90e2;
+            margin: 0 0 10px 0;
+            width: 100%;
+        }
+
+        #preview,
+        #previewCanvas {
+            width: 160px;
+            height: 384px;
+            background-color: #000;
+            border: 1px solid #333;
+            image-rendering: pixelated;
+            display: block;
+        }
+
+        #processCanvas {
+            display: none;
+        }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .controls-container {
+            flex: 0 0 300px;
+        }
+
+        .preview-section {
+            flex: 1;
+            min-width: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>LED Panel Video Streamer</h1>
+
+        <div>
+            <button id="connectButton">Connect to Teensy</button>
+            <input type="file" id="fileInput" accept="video/mp4,video/quicktime" />
+            <button id="streamButton" disabled>Start Streaming</button>
+            <button id="stopButton" disabled>Stop</button>
+        </div>
+
+        <div class="main-container">
+            <div class="controls-container">
+                <div class="controls">
+                    <div class="control-group">
+                        <label for="contrast">Contrast: <span id="contrastValue">1.0</span></label>
+                        <input type="range" id="contrast" min="0" max="200" value="100" step="10">
+                    </div>
+                    <div class="control-group">
+                        <label for="brightness">Brightness: <span id="brightnessValue">0</span></label>
+                        <input type="range" id="brightness" min="-100" max="100" value="0" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="shadows">Shadows: <span id="shadowsValue">0</span></label>
+                        <input type="range" id="shadows" min="-100" max="100" value="0" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="midtones">Midtones: <span id="midtonesValue">0</span></label>
+                        <input type="range" id="midtones" min="-100" max="100" value="0" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="highlights">Highlights: <span id="highlightsValue">0</span></label>
+                        <input type="range" id="highlights" min="-100" max="100" value="0" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="red">Red Channel: <span id="redValue">100</span>%</label>
+                        <input type="range" id="red" min="0" max="200" value="100" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="green">Green Channel: <span id="greenValue">100</span>%</label>
+                        <input type="range" id="green" min="0" max="200" value="100" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label for="blue">Blue Channel: <span id="blueValue">100</span>%</label>
+                        <input type="range" id="blue" min="0" max="200" value="100" step="5">
+                    </div>
+                    <div class="control-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="loopVideo" checked>
+                            Loop video
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <button id="downloadBinButton" disabled>Convert & Download .bin</button>
+                        <div id="conversionProgress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <span class="progress-text">0%</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="status" class="info">Ready to connect...</div>
+                <div id="fps">FPS: 0</div>
+            </div>
+
+            <div class="preview-section">
+                <div class="preview-container">
+                    <div class="preview-box">
+                        <h3>Original</h3>
+                        <video id="preview" controls loop>
+                            Your browser does not support the video element.
+                        </video>
+                    </div>
+                    <div class="preview-box">
+                        <h3>Processed</h3>
+                        <canvas id="previewCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <canvas id="processCanvas"></canvas>
+    </div>
+
+    <script>
+        const PANEL_WIDTH = 40;
+        const PANEL_HEIGHT = 96;
+        const FRAME_SIZE = PANEL_WIDTH * PANEL_HEIGHT * 3;  // RGB
+        const CHUNK_SIZE = 1024;
+        const TARGET_FPS = 30;
+        const FRAME_TIME = 1000 / TARGET_FPS;
+        const PREVIEW_WIDTH = PANEL_WIDTH;
+        const PREVIEW_HEIGHT = PANEL_HEIGHT;
+
+        let port;
+        let isStreaming = false;
+        let frameCount = 0;
+        let lastFpsTime = 0;
+        let streamInterval;
+        let contrast = 1.0;
+        let brightness = 0;
+        let shouldLoop = true;
+        let videoLoop;
+        let originalFileName = '';
+        let shadows = 0;
+        let midtones = 0;
+        let highlights = 0;
+        let redChannel = 1.0;
+        let greenChannel = 1.0;
+        let blueChannel = 1.0;
+
+        const video = document.getElementById('preview');
+        const canvas = document.getElementById('processCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d', { willReadFrequently: true });
+
+        // Set up canvases with correct dimensions
+        canvas.width = PANEL_WIDTH;
+        canvas.height = PANEL_HEIGHT;
+        previewCanvas.width = PREVIEW_WIDTH;
+        previewCanvas.height = PREVIEW_HEIGHT;
+
+        // Start the preview loop immediately
+        requestAnimationFrame(updatePreview);
+
+        // Add this to make sure preview updates when video loads
+        video.addEventListener('loadedmetadata', () => {
+            if (!isStreaming) {
+                requestAnimationFrame(updatePreview);
+            }
+        });
+
+        async function connect() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 2000000 });
+
+                document.getElementById('status').className = 'success';
+                document.getElementById('status').textContent = 'Connected to Teensy';
+                document.getElementById('streamButton').disabled = false;
+                document.getElementById('connectButton').disabled = true;
+            } catch (error) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Connection failed: ' + error;
+            }
+        }
+
+        function adjustPixel(value, contrast, brightness, channel) {
+            // Apply contrast
+            let newValue = ((value / 255 - 0.5) * contrast + 0.5) * 255;
+
+            // Apply brightness
+            newValue += brightness;
+
+            // Apply tone adjustments
+            const normalizedValue = newValue / 255;
+
+            // Shadows affect dark areas (0-0.33)
+            if (normalizedValue <= 0.33) {
+                newValue += shadows * (1 - normalizedValue * 3);
+            }
+
+            // Midtones affect middle range (0.33-0.66)
+            if (normalizedValue > 0.33 && normalizedValue < 0.66) {
+                const midFactor = 1 - Math.abs(normalizedValue - 0.5) * 3;
+                newValue += midtones * midFactor;
+            }
+
+            // Highlights affect bright areas (0.66-1.0)
+            if (normalizedValue >= 0.66) {
+                newValue += highlights * ((normalizedValue - 0.66) * 3);
+            }
+
+            // Apply channel adjustment
+            newValue *= channel;
+
+            // Clamp value between 0 and 255
+            return Math.max(0, Math.min(255, newValue));
+        }
+
+        function processVideoFrame() {
+            ctx.drawImage(video, 0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+            const imageData = ctx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+            const data = imageData.data;
+            const rgbData = new Uint8Array(PANEL_WIDTH * PANEL_HEIGHT * 3);
+            let rgbIndex = 0;
+
+            for (let i = 0; i < data.length; i += 4) {
+                rgbData[rgbIndex++] = adjustPixel(data[i], contrast, brightness, redChannel);     // R
+                rgbData[rgbIndex++] = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
+                rgbData[rgbIndex++] = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
+            }
+
+            return rgbData;
+        }
+
+        async function streamVideo() {
+            if (!isStreaming || !port) return;
+
+            const now = performance.now();
+
+            // Process current frame
+            const frameData = processVideoFrame();
+
+            try {
+                // Send frame in chunks
+                for (let i = 0; i < frameData.length; i += CHUNK_SIZE) {
+                    const chunk = frameData.slice(i, i + CHUNK_SIZE);
+                    const writer = port.writable.getWriter();
+                    await writer.write(chunk);
+                    writer.releaseLock();
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                }
+
+                // Update FPS counter
+                frameCount++;
+                if (now - lastFpsTime >= 1000) {
+                    const fps = frameCount;
+                    document.getElementById('fps').textContent = `FPS: ${fps}`;
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+
+                // Schedule next frame
+                if (isStreaming) {
+                    const elapsed = performance.now() - now;
+                    const delay = Math.max(0, FRAME_TIME - elapsed);
+                    videoLoop = setTimeout(streamVideo, delay);
+                }
+            } catch (error) {
+                console.error('Streaming error:', error);
+                isStreaming = false;
+                document.getElementById('streamButton').disabled = false;
+                document.getElementById('stopButton').disabled = true;
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Streaming error: ' + error.message;
+            }
+        }
+
+        async function convertToBin() {
+            if (!video.src) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Please select a video file';
+                return;
+            }
+
+            const progressBar = document.getElementById('conversionProgress');
+            const progressFill = progressBar.querySelector('.progress-fill');
+            const progressText = progressBar.querySelector('.progress-text');
+
+            progressBar.style.display = 'block';
+            document.getElementById('downloadBinButton').disabled = true;
+            document.getElementById('status').className = 'info';
+            document.getElementById('status').textContent = 'Converting video to binary...';
+
+            // Get video duration and calculate total frames
+            const duration = video.duration;
+            const totalFrames = Math.floor(duration * TARGET_FPS);
+            let currentFrame = 0;
+
+            // Create a buffer to hold all frames
+            const binData = new Uint8Array(totalFrames * FRAME_SIZE);
+            let binOffset = 0;
+
+            // Save current video time and playback state
+            const originalTime = video.currentTime;
+            const wasPlaying = !video.paused;
+            if (wasPlaying) {
+                video.pause();
+            }
+            video.currentTime = 0;
+
+            try {
+                // Process each frame
+                for (let i = 0; i < totalFrames; i++) {
+                    // Wait for the video to update to the current frame
+                    await new Promise(resolve => {
+                        video.onseeked = resolve;
+                        if (video.currentTime >= duration) {
+                            resolve();
+                        } else {
+                            video.currentTime = i / TARGET_FPS;
+                        }
+                    });
+
+                    // Process frame with current contrast and brightness settings
+                    const frameData = processVideoFrame();
+
+                    // Add to binary buffer
+                    binData.set(frameData, binOffset);
+                    binOffset += frameData.length;
+
+                    // Update progress
+                    currentFrame++;
+                    const progress = Math.floor((currentFrame / totalFrames) * 100);
+                    progressFill.style.width = `${progress}%`;
+                    progressText.textContent = `${progress}%`;
+                }
+
+                // Create and download the binary file
+                const blob = new Blob([binData], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = originalFileName.replace(/\.[^/.]+$/, '.bin');  // Replace extension with .bin
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                document.getElementById('status').className = 'success';
+                document.getElementById('status').textContent = 'Binary file downloaded!';
+            } catch (error) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Error converting video: ' + error.message;
+            } finally {
+                // Restore video state
+                video.currentTime = originalTime;
+                if (wasPlaying && isStreaming) {
+                    video.play();
+                }
+                document.getElementById('downloadBinButton').disabled = false;
+                progressBar.style.display = 'none';
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('connectButton').onclick = connect;
+
+        document.getElementById('fileInput').onchange = (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                originalFileName = file.name;  // Store the original filename
+                video.src = URL.createObjectURL(file);
+                document.getElementById('streamButton').disabled = false;
+                document.getElementById('stopButton').disabled = true;
+                document.getElementById('downloadBinButton').disabled = false;
+            }
+        };
+
+        document.getElementById('streamButton').onclick = () => {
+            if (!video.src) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Please select a video file';
+                return;
+            }
+
+            if (!port) {
+                document.getElementById('status').className = 'error';
+                document.getElementById('status').textContent = 'Please connect to Teensy first';
+                return;
+            }
+
+            isStreaming = true;
+            video.loop = shouldLoop;
+            video.play();
+
+            // Clear the preview canvas when starting stream
+            previewCtx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+
+            document.getElementById('streamButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+            document.getElementById('status').className = 'info';
+            document.getElementById('status').textContent = 'Streaming video...';
+            streamVideo();
+        };
+
+        document.getElementById('stopButton').onclick = () => {
+            isStreaming = false;
+            clearTimeout(videoLoop);
+            video.pause();
+            document.getElementById('streamButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            document.getElementById('status').className = 'info';
+            document.getElementById('status').textContent = 'Streaming stopped';
+        };
+
+        document.getElementById('contrast').oninput = (event) => {
+            contrast = event.target.value / 100;
+            document.getElementById('contrastValue').textContent = contrast.toFixed(1);
+            updateControls();
+        };
+
+        document.getElementById('brightness').oninput = (event) => {
+            brightness = parseInt(event.target.value);
+            document.getElementById('brightnessValue').textContent = brightness;
+            updateControls();
+        };
+
+        document.getElementById('shadows').oninput = (event) => {
+            shadows = parseInt(event.target.value);
+            document.getElementById('shadowsValue').textContent = shadows;
+            updateControls();
+        };
+
+        document.getElementById('midtones').oninput = (event) => {
+            midtones = parseInt(event.target.value);
+            document.getElementById('midtonesValue').textContent = midtones;
+            updateControls();
+        };
+
+        document.getElementById('highlights').oninput = (event) => {
+            highlights = parseInt(event.target.value);
+            document.getElementById('highlightsValue').textContent = highlights;
+            updateControls();
+        };
+
+        document.getElementById('loopVideo').onchange = (event) => {
+            shouldLoop = event.target.checked;
+            video.loop = shouldLoop;
+            updateControls();
+        };
+
+        document.getElementById('downloadBinButton').onclick = convertToBin;
+
+        // Check WebSerial support
+        if (!navigator.serial) {
+            document.getElementById('status').className = 'error';
+            document.getElementById('status').textContent =
+                'WebSerial is not supported in this browser. Please use Chrome or Edge.';
+            document.getElementById('connectButton').disabled = true;
+        }
+
+        // Add video ended event handler
+        video.addEventListener('ended', () => {
+            if (!shouldLoop) {
+                isStreaming = false;
+                clearTimeout(videoLoop);
+                document.getElementById('streamButton').disabled = false;
+                document.getElementById('stopButton').disabled = true;
+                document.getElementById('status').className = 'info';
+                document.getElementById('status').textContent = 'Playback finished';
+            }
+        });
+
+        // Replace the updatePreview function with this:
+        function updatePreview() {
+            if (video.readyState >= 2 && !isStreaming) {
+                // Draw at panel resolution
+                previewCtx.drawImage(video, 0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+
+                // Process the smaller image for better performance
+                const imageData = previewCtx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+                const data = imageData.data;
+
+                // Process pixels
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = adjustPixel(data[i], contrast, brightness, redChannel);     // R
+                    data[i + 1] = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
+                    data[i + 2] = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
+                    // Alpha channel remains unchanged
+                }
+
+                previewCtx.putImageData(imageData, 0, 0);
+            }
+
+            // Use RAF only when video is playing
+            if (!video.paused) {
+                requestAnimationFrame(updatePreview);
+            }
+        }
+
+        // Replace the updateControls function with this:
+        function updateControls() {
+            if (!isStreaming && !video.paused) {
+                requestAnimationFrame(updatePreview);
+            } else if (!isStreaming) {
+                // If video is paused, update once
+                updatePreview();
+            }
+        }
+
+        // Add these video event listeners after the other event listeners
+        video.addEventListener('play', () => {
+            if (!isStreaming) {
+                requestAnimationFrame(updatePreview);
+            }
+        });
+
+        video.addEventListener('pause', () => {
+            // Update one last time when paused
+            if (!isStreaming) {
+                updatePreview();
+            }
+        });
+
+        // Add event listeners for the RGB controls
+        document.getElementById('red').oninput = (event) => {
+            redChannel = event.target.value / 100;
+            document.getElementById('redValue').textContent = Math.round(redChannel * 100);
+            updateControls();
+        };
+
+        document.getElementById('green').oninput = (event) => {
+            greenChannel = event.target.value / 100;
+            document.getElementById('greenValue').textContent = Math.round(greenChannel * 100);
+            updateControls();
+        };
+
+        document.getElementById('blue').oninput = (event) => {
+            blueChannel = event.target.value / 100;
+            document.getElementById('blueValue').textContent = Math.round(blueChannel * 100);
+            updateControls();
+        };
+    </script>
+</body>
+
+</html>
