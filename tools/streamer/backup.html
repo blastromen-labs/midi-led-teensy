@@ -332,6 +332,12 @@
                         </label>
                     </div>
                     <div class="control-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="muteVideo">
+                            Enable sound
+                        </label>
+                    </div>
+                    <div class="control-group">
                         <button id="downloadBinButton" disabled>Convert & Download .bin</button>
                         <div id="conversionProgress" style="display: none;">
                             <div class="progress-bar">
@@ -366,7 +372,7 @@
                 <div class="preview-container">
                     <div class="preview-box">
                         <h3>Original</h3>
-                        <video id="preview" controls loop>
+                        <video id="preview" controls loop muted>
                             Your browser does not support the video element.
                         </video>
                     </div>
@@ -506,8 +512,39 @@
             return Math.max(0, Math.min(255, newValue));
         }
 
+        // Add this helper function to calculate centered crop dimensions
+        function calculateCrop(videoWidth, videoHeight) {
+            const targetAspect = PANEL_WIDTH / PANEL_HEIGHT;
+            const videoAspect = videoWidth / videoHeight;
+
+            let sourceX = 0;
+            let sourceY = 0;
+            let sourceWidth = videoWidth;
+            let sourceHeight = videoHeight;
+
+            if (videoAspect > targetAspect) {
+                // Video is wider than target - crop sides
+                sourceWidth = videoHeight * targetAspect;
+                sourceX = (videoWidth - sourceWidth) / 2;
+            } else if (videoAspect < targetAspect) {
+                // Video is taller than target - crop top/bottom
+                sourceHeight = videoWidth / targetAspect;
+                sourceY = (videoHeight - sourceHeight) / 2;
+            }
+
+            return { sourceX, sourceY, sourceWidth, sourceHeight };
+        }
+
+        // Modify the processVideoFrame function
         function processVideoFrame() {
-            ctx.drawImage(video, 0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+            const crop = calculateCrop(video.videoWidth, video.videoHeight);
+
+            // Draw with crop
+            ctx.drawImage(video,
+                crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+                0, 0, PANEL_WIDTH, PANEL_HEIGHT
+            );
+
             const imageData = ctx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
             const data = imageData.data;
             const rgbData = new Uint8Array(PANEL_WIDTH * PANEL_HEIGHT * 3);
@@ -761,17 +798,21 @@
             }
         });
 
-        // Replace the updatePreview function with this:
+        // Modify the updatePreview function
         function updatePreview() {
             if (video.readyState >= 2 && !isStreaming) {
-                // Draw at panel resolution
-                previewCtx.drawImage(video, 0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+                const crop = calculateCrop(video.videoWidth, video.videoHeight);
 
-                // Process the smaller image for better performance
+                // Draw at panel resolution with crop
+                previewCtx.drawImage(video,
+                    crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+                    0, 0, PANEL_WIDTH, PANEL_HEIGHT
+                );
+
+                // Process the image
                 const imageData = previewCtx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
                 const data = imageData.data;
 
-                // Process pixels
                 for (let i = 0; i < data.length; i += 4) {
                     data[i] = adjustPixel(data[i], contrast, brightness, redChannel);     // R
                     data[i + 1] = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
@@ -782,7 +823,6 @@
                 previewCtx.putImageData(imageData, 0, 0);
             }
 
-            // Use RAF only when video is playing
             if (!video.paused) {
                 requestAnimationFrame(updatePreview);
             }
@@ -1000,6 +1040,11 @@
                 progressBar.style.display = 'none';
             }
         }
+
+        // Add with other event listeners
+        document.getElementById('muteVideo').onchange = (event) => {
+            video.muted = !event.target.checked;
+        };
     </script>
 </body>
 
