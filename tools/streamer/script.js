@@ -590,3 +590,103 @@ document.getElementById('xOffset').oninput = (event) => {
     document.getElementById('xOffsetValue').textContent = xOffset;
     updateControls();
 };
+
+// Reset function to restore default values
+function resetControls() {
+    // Reset all values to defaults
+    contrast = 1.0;
+    brightness = 0;
+    shadows = 0;
+    midtones = 0;
+    highlights = 0;
+    redChannel = 1.0;
+    greenChannel = 1.0;
+    blueChannel = 1.0;
+    xOffset = 0;
+
+    // Reset all sliders and their displays
+    document.getElementById('contrast').value = 100;
+    document.getElementById('contrastValue').textContent = '1.0';
+
+    document.getElementById('brightness').value = 0;
+    document.getElementById('brightnessValue').textContent = '0';
+
+    document.getElementById('shadows').value = 0;
+    document.getElementById('shadowsValue').textContent = '0';
+
+    document.getElementById('midtones').value = 0;
+    document.getElementById('midtonesValue').textContent = '0';
+
+    document.getElementById('highlights').value = 0;
+    document.getElementById('highlightsValue').textContent = '0';
+
+    document.getElementById('red').value = 100;
+    document.getElementById('redValue').textContent = '100';
+
+    document.getElementById('green').value = 100;
+    document.getElementById('greenValue').textContent = '100';
+
+    document.getElementById('blue').value = 100;
+    document.getElementById('blueValue').textContent = '100';
+
+    document.getElementById('xOffset').value = 0;
+    document.getElementById('xOffsetValue').textContent = '0';
+
+    // Update preview
+    updateControls();
+}
+
+// Add the reset button event listener
+document.getElementById('resetButton').onclick = resetControls;
+
+// Add after the resetControls function
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomizeControls() {
+    // Randomize values within reasonable ranges
+    contrast = (getRandomInt(50, 150) / 100);  // 0.5 to 1.5
+    brightness = getRandomInt(-50, 50);        // -50 to 50
+    shadows = getRandomInt(-50, 50);           // -50 to 50
+    midtones = getRandomInt(-50, 50);          // -50 to 50
+    highlights = getRandomInt(-50, 50);        // -50 to 50
+    redChannel = (getRandomInt(50, 150) / 100);   // 0.5 to 1.5
+    greenChannel = (getRandomInt(50, 150) / 100); // 0.5 to 1.5
+    blueChannel = (getRandomInt(50, 150) / 100);  // 0.5 to 1.5
+    xOffset = getRandomInt(-50, 50);           // -50 to 50
+
+    // Update all sliders and their displays
+    document.getElementById('contrast').value = contrast * 100;
+    document.getElementById('contrastValue').textContent = contrast.toFixed(1);
+
+    document.getElementById('brightness').value = brightness;
+    document.getElementById('brightnessValue').textContent = brightness;
+
+    document.getElementById('shadows').value = shadows;
+    document.getElementById('shadowsValue').textContent = shadows;
+
+    document.getElementById('midtones').value = midtones;
+    document.getElementById('midtonesValue').textContent = midtones;
+
+    document.getElementById('highlights').value = highlights;
+    document.getElementById('highlightsValue').textContent = highlights;
+
+    document.getElementById('red').value = redChannel * 100;
+    document.getElementById('redValue').textContent = Math.round(redChannel * 100);
+
+    document.getElementById('green').value = greenChannel * 100;
+    document.getElementById('greenValue').textContent = Math.round(greenChannel * 100);
+
+    document.getElementById('blue').value = blueChannel * 100;
+    document.getElementById('blueValue').textContent = Math.round(blueChannel * 100);
+
+    document.getElementById('xOffset').value = xOffset;
+    document.getElementById('xOffsetValue').textContent = xOffset;
+
+    // Update preview
+    updateControls();
+}
+
+// Add the random button event listener
+document.getElementById('randomButton').onclick = randomizeControls;

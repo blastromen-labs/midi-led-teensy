@@ -267,21 +267,30 @@ h1 {
     margin: 0;
 }
 
+.button-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.reset-button,
+.random-button {
+    flex: 1;
+    padding: 8px 15px;
+    font-size: 0.9em;
+    margin: 0;
+    /* Remove previous margins */
+}
+
+/* Update existing button styles */
 .reset-button {
     background-color: #2d4159;
     color: #4a90e2;
     border: 1px solid #4a90e2;
-    width: 100%;
-    margin-top: 20px;
 }
 
-.reset-button:hover {
-    background-color: #4a90e2;
-    color: #fff;
-}
-
-.reset-button:disabled {
-    background-color: #2a2a2a;
-    color: #666;
-    border-color: #444;
+.random-button {
+    background-color: #3d2d59;
+    color: #b76cff;
+    border: 1px solid #b76cff;
 }
