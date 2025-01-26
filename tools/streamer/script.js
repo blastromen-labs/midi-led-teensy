@@ -27,6 +27,8 @@ let isConnected = false;
 let trimStart = 0;
 let trimEnd = 0;
 let xOffset = 0;  // -100 to 100 percentage
+let colorizeColor = '#4a90e2';
+let colorizeAmount = 0;
 
 const video = document.getElementById('preview');
 const canvas = document.getElementById('processCanvas');
@@ -91,6 +93,75 @@ async function toggleConnection() {
     }
 }
 
+// Add this helper function at the top with other utility functions
+function hexToRgb(hex) {
+    const r = parseInt(hex.substr(1, 2), 16);
+    const g = parseInt(hex.substr(3, 2), 16);
+    const b = parseInt(hex.substr(5, 2), 16);
+    return [r, g, b];
+}
+
+// Add this helper function for color blending
+function blendColorize(original, targetRGB, intensity, channel) {
+    // Get luminance of original pixel
+    const luminance = original / 255;
+
+    // Get target color for this channel
+    const targetValue = channel === redChannel ? targetRGB[0] :
+        channel === greenChannel ? targetRGB[1] : targetRGB[2];
+
+    // Overlay blend mode formula
+    let result;
+    if (luminance < 0.5) {
+        result = (2 * original * targetValue) / 255;
+    } else {
+        result = 255 - (2 * (255 - original) * (255 - targetValue)) / 255;
+    }
+
+    // Blend between original and overlaid color
+    return original * (1 - intensity) + result * intensity;
+}
+
+// Modify the processVideoFrame function to handle colorize properly
+function processVideoFrame() {
+    const crop = calculateCrop(video.videoWidth, video.videoHeight);
+
+    // Draw with crop
+    ctx.drawImage(video,
+        crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+        0, 0, PANEL_WIDTH, PANEL_HEIGHT
+    );
+
+    const imageData = ctx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+    const data = imageData.data;
+    const rgbData = new Uint8Array(PANEL_WIDTH * PANEL_HEIGHT * 3);
+    let rgbIndex = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+        // Get RGB values
+        let rr = adjustPixel(data[i], contrast, brightness, redChannel);     // R
+        let gg = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
+        let bb = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
+
+        // Apply colorize effect after other adjustments
+        if (colorizeAmount > 0) {
+            const targetRGB = hexToRgb(colorizeColor);
+            const intensity = colorizeAmount / 100;
+            rr = rr * (1 - intensity) + targetRGB[0] * intensity;
+            gg = gg * (1 - intensity) + targetRGB[1] * intensity;
+            bb = bb * (1 - intensity) + targetRGB[2] * intensity;
+        }
+
+        // Store adjusted values
+        rgbData[rgbIndex++] = Math.max(0, Math.min(255, rr));
+        rgbData[rgbIndex++] = Math.max(0, Math.min(255, gg));
+        rgbData[rgbIndex++] = Math.max(0, Math.min(255, bb));
+    }
+
+    return rgbData;
+}
+
+// Remove colorize from adjustPixel function
 function adjustPixel(value, contrast, brightness, channel) {
     // Apply contrast
     let newValue = ((value / 255 - 0.5) * contrast + 0.5) * 255;
@@ -154,30 +225,6 @@ function calculateCrop(videoWidth, videoHeight) {
     }
 
     return { sourceX, sourceY, sourceWidth, sourceHeight };
-}
-
-// Modify the processVideoFrame function
-function processVideoFrame() {
-    const crop = calculateCrop(video.videoWidth, video.videoHeight);
-
-    // Draw with crop
-    ctx.drawImage(video,
-        crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
-        0, 0, PANEL_WIDTH, PANEL_HEIGHT
-    );
-
-    const imageData = ctx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
-    const data = imageData.data;
-    const rgbData = new Uint8Array(PANEL_WIDTH * PANEL_HEIGHT * 3);
-    let rgbIndex = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-        rgbData[rgbIndex++] = adjustPixel(data[i], contrast, brightness, redChannel);     // R
-        rgbData[rgbIndex++] = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
-        rgbData[rgbIndex++] = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
-    }
-
-    return rgbData;
 }
 
 async function streamVideo() {
@@ -424,7 +471,7 @@ video.addEventListener('ended', () => {
     }
 });
 
-// Modify the updatePreview function
+// Modify the updatePreview function to match processVideoFrame
 function updatePreview() {
     if (video.readyState >= 2 && !isStreaming) {
         const crop = calculateCrop(video.videoWidth, video.videoHeight);
@@ -440,9 +487,24 @@ function updatePreview() {
         const data = imageData.data;
 
         for (let i = 0; i < data.length; i += 4) {
-            data[i] = adjustPixel(data[i], contrast, brightness, redChannel);     // R
-            data[i + 1] = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
-            data[i + 2] = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
+            // Get RGB values
+            let rr = adjustPixel(data[i], contrast, brightness, redChannel);     // R
+            let gg = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
+            let bb = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
+
+            // Apply colorize effect after other adjustments
+            if (colorizeAmount > 0) {
+                const targetRGB = hexToRgb(colorizeColor);
+                const intensity = colorizeAmount / 100;
+                rr = rr * (1 - intensity) + targetRGB[0] * intensity;
+                gg = gg * (1 - intensity) + targetRGB[1] * intensity;
+                bb = bb * (1 - intensity) + targetRGB[2] * intensity;
+            }
+
+            // Store adjusted values
+            data[i] = Math.max(0, Math.min(255, rr));
+            data[i + 1] = Math.max(0, Math.min(255, gg));
+            data[i + 2] = Math.max(0, Math.min(255, bb));
             // Alpha channel remains unchanged
         }
 
@@ -603,6 +665,7 @@ function resetControls() {
     greenChannel = 1.0;
     blueChannel = 1.0;
     xOffset = 0;
+    colorizeAmount = 0;
 
     // Reset all sliders and their displays
     document.getElementById('contrast').value = 100;
@@ -632,6 +695,11 @@ function resetControls() {
     document.getElementById('xOffset').value = 0;
     document.getElementById('xOffsetValue').textContent = '0';
 
+    document.getElementById('colorizeAmount').value = 0;
+    document.getElementById('colorizeAmountValue').textContent = '0';
+    document.getElementById('colorizeColor').value = '#4a90e2';
+    colorizeColor = '#4a90e2';
+
     // Update preview
     updateControls();
 }
@@ -655,6 +723,7 @@ function randomizeControls() {
     greenChannel = (getRandomInt(50, 150) / 100); // 0.5 to 1.5
     blueChannel = (getRandomInt(50, 150) / 100);  // 0.5 to 1.5
     xOffset = getRandomInt(-50, 50);           // -50 to 50
+    colorizeAmount = getRandomInt(0, 100);
 
     // Update all sliders and their displays
     document.getElementById('contrast').value = contrast * 100;
@@ -684,9 +753,29 @@ function randomizeControls() {
     document.getElementById('xOffset').value = xOffset;
     document.getElementById('xOffsetValue').textContent = xOffset;
 
+    document.getElementById('colorizeAmount').value = colorizeAmount;
+    document.getElementById('colorizeAmountValue').textContent = colorizeAmount;
+
+    // Random color
+    const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    document.getElementById('colorizeColor').value = randomColor;
+    colorizeColor = randomColor;
+
     // Update preview
     updateControls();
 }
 
 // Add the random button event listener
 document.getElementById('randomButton').onclick = randomizeControls;
+
+// Add the colorize event listeners
+document.getElementById('colorizeColor').onchange = (event) => {
+    colorizeColor = event.target.value;
+    updateControls();
+};
+
+document.getElementById('colorizeAmount').oninput = (event) => {
+    colorizeAmount = parseInt(event.target.value);
+    document.getElementById('colorizeAmountValue').textContent = colorizeAmount;
+    updateControls();
+};

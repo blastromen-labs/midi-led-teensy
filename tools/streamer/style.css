@@ -294,3 +294,24 @@ h1 {
     color: #b76cff;
     border: 1px solid #b76cff;
 }
+
+.colorize-control {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.colorize-control input[type="color"] {
+    width: 100%;
+    height: 40px;
+    padding: 2px;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.colorize-control label {
+    margin: 5px 0;
+}
