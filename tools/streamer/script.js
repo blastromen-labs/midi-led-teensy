@@ -29,6 +29,7 @@ let trimEnd = 0;
 let xOffset = 0;  // -100 to 100 percentage
 let colorizeColor = '#4a90e2';
 let colorizeAmount = 0;
+let colorLevels = 256;  // Number of color levels per channel
 
 const video = document.getElementById('preview');
 const canvas = document.getElementById('processCanvas');
@@ -150,6 +151,13 @@ function processVideoFrame() {
             rr = rr * (1 - intensity) + targetRGB[0] * intensity;
             gg = gg * (1 - intensity) + targetRGB[1] * intensity;
             bb = bb * (1 - intensity) + targetRGB[2] * intensity;
+        }
+
+        // Apply color reduction
+        if (colorLevels < 256) {
+            rr = reduceColors(rr);
+            gg = reduceColors(gg);
+            bb = reduceColors(bb);
         }
 
         // Store adjusted values
@@ -501,6 +509,13 @@ function updatePreview() {
                 bb = bb * (1 - intensity) + targetRGB[2] * intensity;
             }
 
+            // Apply color reduction
+            if (colorLevels < 256) {
+                rr = reduceColors(rr);
+                gg = reduceColors(gg);
+                bb = reduceColors(bb);
+            }
+
             // Store adjusted values
             data[i] = Math.max(0, Math.min(255, rr));
             data[i + 1] = Math.max(0, Math.min(255, gg));
@@ -666,6 +681,7 @@ function resetControls() {
     blueChannel = 1.0;
     xOffset = 0;
     colorizeAmount = 0;
+    colorLevels = 256;
 
     // Reset all sliders and their displays
     document.getElementById('contrast').value = 100;
@@ -700,6 +716,9 @@ function resetControls() {
     document.getElementById('colorizeColor').value = '#4a90e2';
     colorizeColor = '#4a90e2';
 
+    document.getElementById('colorLevels').value = 256;
+    document.getElementById('colorLevelsValue').textContent = '256';
+
     // Update preview
     updateControls();
 }
@@ -724,6 +743,7 @@ function randomizeControls() {
     blueChannel = (getRandomInt(50, 150) / 100);  // 0.5 to 1.5
     xOffset = getRandomInt(-50, 50);           // -50 to 50
     colorizeAmount = getRandomInt(0, 100);
+    colorLevels = Math.pow(2, getRandomInt(2, 8)); // 4 to 256 colors in power of 2 steps
 
     // Update all sliders and their displays
     document.getElementById('contrast').value = contrast * 100;
@@ -761,6 +781,9 @@ function randomizeControls() {
     document.getElementById('colorizeColor').value = randomColor;
     colorizeColor = randomColor;
 
+    document.getElementById('colorLevels').value = colorLevels;
+    document.getElementById('colorLevelsValue').textContent = colorLevels;
+
     // Update preview
     updateControls();
 }
@@ -779,3 +802,21 @@ document.getElementById('colorizeAmount').oninput = (event) => {
     document.getElementById('colorizeAmountValue').textContent = colorizeAmount;
     updateControls();
 };
+
+// Add the color levels event listener
+document.getElementById('colorLevels').oninput = (event) => {
+    colorLevels = parseInt(event.target.value);
+    document.getElementById('colorLevelsValue').textContent = colorLevels;
+    updateControls();
+};
+
+// Add color reduction function
+function reduceColors(value) {
+    if (colorLevels === 256) return value;
+
+    // Calculate step size for the given number of levels
+    const step = 256 / (colorLevels - 1);
+
+    // Quantize the value to nearest step
+    return Math.round(Math.round(value / step) * step);
+}
