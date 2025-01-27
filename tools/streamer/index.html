@@ -45,6 +45,22 @@
                         <input type="range" id="highlights" min="-100" max="100" value="0" step="5">
                     </div>
                     <div class="control-group">
+                        <div class="gaussian-control">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="gaussianEnabled">
+                                Enable Gaussian Adjustment
+                            </label>
+                            <div class="gaussian-sliders">
+                                <label>Midpoint: <span id="gaussianMidValue">0.5</span></label>
+                                <input type="range" id="gaussianMid" min="0" max="100" value="50" step="1">
+                                <label>Spread: <span id="gaussianSpreadValue">0.25</span></label>
+                                <input type="range" id="gaussianSpread" min="1" max="100" value="25" step="1">
+                                <label>Strength: <span id="gaussianStrengthValue">0.5</span></label>
+                                <input type="range" id="gaussianStrength" min="0" max="100" value="50" step="1">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="control-group">
                         <label for="red">Red Channel: <span id="redValue">100</span>%</label>
                         <input type="range" id="red" min="0" max="200" value="100" step="5">
                     </div>
@@ -59,18 +75,6 @@
                     <div class="control-group">
                         <label for="xOffset">X Offset: <span id="xOffsetValue">0</span>%</label>
                         <input type="range" id="xOffset" min="-100" max="100" value="0" step="1">
-                    </div>
-                    <div class="control-group">
-                        <label>Colorize Effect</label>
-                        <div class="colorize-control">
-                            <input type="color" id="colorizeColor" value="#4a90e2">
-                            <label>Amount: <span id="colorizeAmountValue">0</span>%</label>
-                            <input type="range" id="colorizeAmount" min="0" max="100" value="0" step="1">
-                        </div>
-                    </div>
-                    <div class="control-group">
-                        <label for="colorLevels">Color Levels: <span id="colorLevelsValue">256</span></label>
-                        <input type="range" id="colorLevels" min="2" max="256" value="256" step="1">
                     </div>
                     <div class="control-group">
                         <label class="checkbox-label">
@@ -122,10 +126,42 @@
                         <video id="preview" controls loop muted>
                             Your browser does not support the video element.
                         </video>
+                        <div class="time-display">
+                            <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
+                        </div>
                     </div>
                     <div class="preview-box">
                         <h3>Processed</h3>
                         <canvas id="previewCanvas"></canvas>
+                    </div>
+                    <div class="effects-panel">
+                        <h3>Video Effects</h3>
+                        <div class="effect-group">
+                            <label>Colorize Effect</label>
+                            <div class="colorize-control">
+                                <input type="color" id="colorizeColor" value="#4a90e2">
+                                <label>Amount: <span id="colorizeAmountValue">0</span>%</label>
+                                <input type="range" id="colorizeAmount" min="0" max="100" value="0" step="1">
+                            </div>
+                        </div>
+                        <div class="effect-group">
+                            <label for="colorLevels">Color Levels: <span id="colorLevelsValue">256</span></label>
+                            <input type="range" id="colorLevels" min="2" max="256" value="256" step="1">
+                        </div>
+                        <div class="effect-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="oneBitMode">
+                                1-Bit Mode
+                            </label>
+                            <div class="one-bit-control">
+                                <label>Primary Color (bright):</label>
+                                <input type="color" id="primaryColor" value="#ffffff">
+                                <label>Secondary Color (dark):</label>
+                                <input type="color" id="secondaryColor" value="#000000">
+                                <label>Threshold: <span id="oneBitThresholdValue">128</span></label>
+                                <input type="range" id="oneBitThreshold" min="0" max="255" value="128" step="1">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
