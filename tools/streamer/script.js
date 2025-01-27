@@ -30,6 +30,14 @@ let xOffset = 0;  // -100 to 100 percentage
 let colorizeColor = '#4a90e2';
 let colorizeAmount = 0;
 let colorLevels = 256;  // Number of color levels per channel
+let oneBitMode = false;
+let primaryColor = '#ffffff';
+let secondaryColor = '#000000';
+let oneBitThreshold = 128;
+let gaussianMid = 0.5;
+let gaussianSpread = 0.25;
+let gaussianStrength = 0.5;
+let gaussianEnabled = false;
 
 const video = document.getElementById('preview');
 const canvas = document.getElementById('processCanvas');
@@ -50,6 +58,100 @@ requestAnimationFrame(updatePreview);
 video.addEventListener('loadedmetadata', () => {
     if (!isStreaming) {
         requestAnimationFrame(updatePreview);
+    }
+});
+
+// Define default values for all sliders
+const DEFAULT_VALUES = {
+    'contrast': 100,        // 1.0
+    'brightness': 0,
+    'shadows': 0,
+    'midtones': 0,
+    'highlights': 0,
+    'red': 100,            // 100%
+    'green': 100,          // 100%
+    'blue': 100,           // 100%
+    'xOffset': 0,
+    'colorizeAmount': 0,
+    'colorLevels': 256,
+    'oneBitThreshold': 128,
+    'gaussianMid': 50,     // 0.5
+    'gaussianSpread': 25,  // 0.25
+    'gaussianStrength': 50 // 0.5
+};
+
+// Add double-click handlers to all sliders
+Object.keys(DEFAULT_VALUES).forEach(id => {
+    const slider = document.getElementById(id);
+    if (slider) {
+        slider.addEventListener('dblclick', () => {
+            slider.value = DEFAULT_VALUES[id];
+
+            // Update the corresponding value display and variable
+            switch (id) {
+                case 'contrast':
+                    contrast = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('contrastValue').textContent = contrast.toFixed(1);
+                    break;
+                case 'brightness':
+                    brightness = DEFAULT_VALUES[id];
+                    document.getElementById('brightnessValue').textContent = brightness;
+                    break;
+                case 'shadows':
+                    shadows = DEFAULT_VALUES[id];
+                    document.getElementById('shadowsValue').textContent = shadows;
+                    break;
+                case 'midtones':
+                    midtones = DEFAULT_VALUES[id];
+                    document.getElementById('midtonesValue').textContent = midtones;
+                    break;
+                case 'highlights':
+                    highlights = DEFAULT_VALUES[id];
+                    document.getElementById('highlightsValue').textContent = highlights;
+                    break;
+                case 'red':
+                    redChannel = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('redValue').textContent = DEFAULT_VALUES[id];
+                    break;
+                case 'green':
+                    greenChannel = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('greenValue').textContent = DEFAULT_VALUES[id];
+                    break;
+                case 'blue':
+                    blueChannel = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('blueValue').textContent = DEFAULT_VALUES[id];
+                    break;
+                case 'xOffset':
+                    xOffset = DEFAULT_VALUES[id];
+                    document.getElementById('xOffsetValue').textContent = xOffset;
+                    break;
+                case 'colorizeAmount':
+                    colorizeAmount = DEFAULT_VALUES[id];
+                    document.getElementById('colorizeAmountValue').textContent = colorizeAmount;
+                    break;
+                case 'colorLevels':
+                    colorLevels = DEFAULT_VALUES[id];
+                    document.getElementById('colorLevelsValue').textContent = colorLevels;
+                    break;
+                case 'oneBitThreshold':
+                    oneBitThreshold = DEFAULT_VALUES[id];
+                    document.getElementById('oneBitThresholdValue').textContent = oneBitThreshold;
+                    break;
+                case 'gaussianMid':
+                    gaussianMid = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('gaussianMidValue').textContent = gaussianMid.toFixed(2);
+                    break;
+                case 'gaussianSpread':
+                    gaussianSpread = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('gaussianSpreadValue').textContent = gaussianSpread.toFixed(2);
+                    break;
+                case 'gaussianStrength':
+                    gaussianStrength = DEFAULT_VALUES[id] / 100;
+                    document.getElementById('gaussianStrengthValue').textContent = gaussianStrength.toFixed(2);
+                    break;
+            }
+            updateControls();
+        });
     }
 });
 
@@ -160,6 +262,27 @@ function processVideoFrame() {
             bb = reduceColors(bb);
         }
 
+        // Apply 1-bit mode
+        if (oneBitMode) {
+            // Calculate luminance
+            const luminance = (rr * 0.299 + gg * 0.587 + bb * 0.114);
+
+            // Convert primary and secondary colors from hex to RGB
+            const primary = hexToRgb(primaryColor);
+            const secondary = hexToRgb(secondaryColor);
+
+            // Apply threshold
+            if (luminance >= oneBitThreshold) {
+                rr = primary[0];
+                gg = primary[1];
+                bb = primary[2];
+            } else {
+                rr = secondary[0];
+                gg = secondary[1];
+                bb = secondary[2];
+            }
+        }
+
         // Store adjusted values
         rgbData[rgbIndex++] = Math.max(0, Math.min(255, rr));
         rgbData[rgbIndex++] = Math.max(0, Math.min(255, gg));
@@ -169,13 +292,22 @@ function processVideoFrame() {
     return rgbData;
 }
 
-// Remove colorize from adjustPixel function
+// Modify the adjustPixel function to include Gaussian adjustment
 function adjustPixel(value, contrast, brightness, channel) {
     // Apply contrast
     let newValue = ((value / 255 - 0.5) * contrast + 0.5) * 255;
 
     // Apply brightness
     newValue += brightness;
+
+    // Apply Gaussian curve adjustment only if enabled
+    if (gaussianEnabled) {
+        const gaussianValue = newValue / 255;
+        const gaussianAdjustment = Math.exp(
+            -Math.pow(gaussianValue - gaussianMid, 2) / (2 * Math.pow(gaussianSpread, 2))
+        );
+        newValue = newValue * (1 + gaussianStrength * gaussianAdjustment);
+    }
 
     // Apply tone adjustments
     const normalizedValue = newValue / 255;
@@ -399,6 +531,7 @@ document.getElementById('streamButton').onclick = () => {
 
     isStreaming = true;
     video.loop = shouldLoop;
+    video.currentTime = trimStart;  // Start from trim point
     video.play();
 
     // Clear the preview canvas when starting stream
@@ -514,6 +647,27 @@ function updatePreview() {
                 rr = reduceColors(rr);
                 gg = reduceColors(gg);
                 bb = reduceColors(bb);
+            }
+
+            // Apply 1-bit mode
+            if (oneBitMode) {
+                // Calculate luminance
+                const luminance = (rr * 0.299 + gg * 0.587 + bb * 0.114);
+
+                // Convert primary and secondary colors from hex to RGB
+                const primary = hexToRgb(primaryColor);
+                const secondary = hexToRgb(secondaryColor);
+
+                // Apply threshold
+                if (luminance >= oneBitThreshold) {
+                    rr = primary[0];
+                    gg = primary[1];
+                    bb = primary[2];
+                } else {
+                    rr = secondary[0];
+                    gg = secondary[1];
+                    bb = secondary[2];
+                }
             }
 
             // Store adjusted values
@@ -682,6 +836,28 @@ function resetControls() {
     xOffset = 0;
     colorizeAmount = 0;
     colorLevels = 256;
+    oneBitMode = false;
+    document.getElementById('oneBitMode').checked = false;
+    document.getElementById('primaryColor').value = '#ffffff';
+    document.getElementById('secondaryColor').value = '#000000';
+    document.getElementById('oneBitThreshold').value = 128;
+    document.getElementById('oneBitThresholdValue').textContent = '128';
+    primaryColor = '#ffffff';
+    secondaryColor = '#000000';
+    oneBitThreshold = 128;
+    document.querySelector('.one-bit-control').classList.remove('active');
+    gaussianMid = 0.5;
+    gaussianSpread = 0.25;
+    gaussianStrength = 0.5;
+    document.getElementById('gaussianMid').value = 50;
+    document.getElementById('gaussianSpread').value = 25;
+    document.getElementById('gaussianStrength').value = 50;
+    document.getElementById('gaussianMidValue').textContent = '0.5';
+    document.getElementById('gaussianSpreadValue').textContent = '0.25';
+    document.getElementById('gaussianStrengthValue').textContent = '0.5';
+    gaussianEnabled = false;
+    document.getElementById('gaussianEnabled').checked = false;
+    document.querySelector('.gaussian-sliders').classList.remove('active');
 
     // Reset all sliders and their displays
     document.getElementById('contrast').value = 100;
@@ -744,6 +920,19 @@ function randomizeControls() {
     xOffset = getRandomInt(-50, 50);           // -50 to 50
     colorizeAmount = getRandomInt(0, 100);
     colorLevels = Math.pow(2, getRandomInt(2, 8)); // 4 to 256 colors in power of 2 steps
+    oneBitMode = Math.random() < 0.5;
+    document.getElementById('oneBitMode').checked = oneBitMode;
+    document.querySelector('.one-bit-control').classList.toggle('active', oneBitMode);
+
+    // Random colors
+    primaryColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    secondaryColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    document.getElementById('primaryColor').value = primaryColor;
+    document.getElementById('secondaryColor').value = secondaryColor;
+
+    oneBitThreshold = getRandomInt(64, 192);
+    document.getElementById('oneBitThreshold').value = oneBitThreshold;
+    document.getElementById('oneBitThresholdValue').textContent = oneBitThreshold;
 
     // Update all sliders and their displays
     document.getElementById('contrast').value = contrast * 100;
@@ -784,8 +973,23 @@ function randomizeControls() {
     document.getElementById('colorLevels').value = colorLevels;
     document.getElementById('colorLevelsValue').textContent = colorLevels;
 
+    // Random Gaussian values
+    gaussianMid = getRandomInt(30, 70) / 100;
+    gaussianSpread = getRandomInt(10, 40) / 100;
+    gaussianStrength = getRandomInt(20, 80) / 100;
+    document.getElementById('gaussianMid').value = gaussianMid * 100;
+    document.getElementById('gaussianSpread').value = gaussianSpread * 100;
+    document.getElementById('gaussianStrength').value = gaussianStrength * 100;
+    document.getElementById('gaussianMidValue').textContent = gaussianMid.toFixed(2);
+    document.getElementById('gaussianSpreadValue').textContent = gaussianSpread.toFixed(2);
+    document.getElementById('gaussianStrengthValue').textContent = gaussianStrength.toFixed(2);
+
     // Update preview
     updateControls();
+
+    gaussianEnabled = Math.random() < 0.5;
+    document.getElementById('gaussianEnabled').checked = gaussianEnabled;
+    document.querySelector('.gaussian-sliders').classList.toggle('active', gaussianEnabled);
 }
 
 // Add the random button event listener
@@ -820,3 +1024,66 @@ function reduceColors(value) {
     // Quantize the value to nearest step
     return Math.round(Math.round(value / step) * step);
 }
+
+// Add event listeners
+document.getElementById('oneBitMode').onchange = (event) => {
+    oneBitMode = event.target.checked;
+    document.querySelector('.one-bit-control').classList.toggle('active', oneBitMode);
+    updateControls();
+};
+
+document.getElementById('primaryColor').onchange = (event) => {
+    primaryColor = event.target.value;
+    updateControls();
+};
+
+document.getElementById('secondaryColor').onchange = (event) => {
+    secondaryColor = event.target.value;
+    updateControls();
+};
+
+document.getElementById('oneBitThreshold').oninput = (event) => {
+    oneBitThreshold = parseInt(event.target.value);
+    document.getElementById('oneBitThresholdValue').textContent = oneBitThreshold;
+    updateControls();
+};
+
+// Update the format time function to show seconds with one decimal
+function formatTime(seconds) {
+    return seconds.toFixed(1) + 's';
+}
+
+// Add these event listeners
+video.addEventListener('loadedmetadata', () => {
+    document.getElementById('totalTime').textContent = formatTime(video.duration);
+});
+
+video.addEventListener('timeupdate', () => {
+    document.getElementById('currentTime').textContent = formatTime(video.currentTime);
+});
+
+// Add event listeners
+document.getElementById('gaussianMid').oninput = (event) => {
+    gaussianMid = event.target.value / 100;
+    document.getElementById('gaussianMidValue').textContent = gaussianMid.toFixed(2);
+    updateControls();
+};
+
+document.getElementById('gaussianSpread').oninput = (event) => {
+    gaussianSpread = event.target.value / 100;
+    document.getElementById('gaussianSpreadValue').textContent = gaussianSpread.toFixed(2);
+    updateControls();
+};
+
+document.getElementById('gaussianStrength').oninput = (event) => {
+    gaussianStrength = event.target.value / 100;
+    document.getElementById('gaussianStrengthValue').textContent = gaussianStrength.toFixed(2);
+    updateControls();
+};
+
+// Update the event listener for the toggle
+document.getElementById('gaussianEnabled').onchange = (event) => {
+    gaussianEnabled = event.target.checked;
+    document.querySelector('.gaussian-sliders').classList.toggle('active', gaussianEnabled);
+    updateControls();
+};
