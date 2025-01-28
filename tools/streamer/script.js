@@ -38,6 +38,7 @@ let gaussianMid = 0.5;
 let gaussianSpread = 0.25;
 let gaussianStrength = 0.5;
 let gaussianEnabled = false;
+let invertEnabled = false;
 
 const video = document.getElementById('preview');
 const canvas = document.getElementById('processCanvas');
@@ -281,6 +282,13 @@ function processVideoFrame() {
                 gg = secondary[1];
                 bb = secondary[2];
             }
+        }
+
+        // Apply invert effect
+        if (invertEnabled) {
+            rr = 255 - rr;
+            gg = 255 - gg;
+            bb = 255 - bb;
         }
 
         // Store adjusted values
@@ -670,6 +678,13 @@ function updatePreview() {
                 }
             }
 
+            // Apply invert effect
+            if (invertEnabled) {
+                rr = 255 - rr;
+                gg = 255 - gg;
+                bb = 255 - bb;
+            }
+
             // Store adjusted values
             data[i] = Math.max(0, Math.min(255, rr));
             data[i + 1] = Math.max(0, Math.min(255, gg));
@@ -858,6 +873,8 @@ function resetControls() {
     gaussianEnabled = false;
     document.getElementById('gaussianEnabled').checked = false;
     document.querySelector('.gaussian-sliders').classList.remove('active');
+    invertEnabled = false;
+    document.getElementById('invertEnabled').checked = false;
 
     // Reset all sliders and their displays
     document.getElementById('contrast').value = 100;
@@ -990,6 +1007,8 @@ function randomizeControls() {
     gaussianEnabled = Math.random() < 0.5;
     document.getElementById('gaussianEnabled').checked = gaussianEnabled;
     document.querySelector('.gaussian-sliders').classList.toggle('active', gaussianEnabled);
+    invertEnabled = Math.random() < 0.5;
+    document.getElementById('invertEnabled').checked = invertEnabled;
 }
 
 // Add the random button event listener
@@ -1085,5 +1104,11 @@ document.getElementById('gaussianStrength').oninput = (event) => {
 document.getElementById('gaussianEnabled').onchange = (event) => {
     gaussianEnabled = event.target.checked;
     document.querySelector('.gaussian-sliders').classList.toggle('active', gaussianEnabled);
+    updateControls();
+};
+
+// Add event listener for invert checkbox
+document.getElementById('invertEnabled').onchange = (event) => {
+    invertEnabled = event.target.checked;
     updateControls();
 };
