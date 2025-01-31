@@ -14,20 +14,24 @@ Conversation on Teensy forum: https://forum.pjrc.com/index.php?threads/project-m
 
 ### Channels
 
-LED_MIDI_CHANNEL_LEFT = 1
-LED_MIDI_CHANNEL_RIGHT = 2
-VIDEO_MIDI_CHANNEL = 3
-IMAGE_MIDI_CHANNEL = 4
-ROW_MIDI_CHANNEL = 5
-STROBE_MIDI_CHANNEL = 6
+| Channel | Function |
+| --- | --- |
+| 1 | LED_MIDI_CHANNEL_LEFT |
+| 2 | LED_MIDI_CHANNEL_RIGHT |
+| 3 | VIDEO_MIDI_CHANNEL |
+| 4 | IMAGE_MIDI_CHANNEL |
+| 5 | ROW_MIDI_CHANNEL |
+| 6 | STROBE_MIDI_CHANNEL |
 
 ### CC
 
-HUE = 1
-SATURATION = 2
-VALUE = 3
-X_POSITION = 4
-Y_POSITION = 5
-VIDEO_DIRECTION = 7
-VIDEO_SCALE = 8
-VIDEO_SPEED = 10
+| CC | Function |
+| --- | --- |
+| 1 | HUE |
+| 2 | SATURATION |
+| 3 | VALUE |
+| 4 | X_POSITION |
+| 5 | Y_POSITION |
+| 7 | VIDEO_DIRECTION |
+| 8 | VIDEO_SCALE |
+| 10 | VIDEO_SPEED |
