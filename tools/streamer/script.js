@@ -39,6 +39,10 @@ let gaussianSpread = 0.25;
 let gaussianStrength = 0.5;
 let gaussianEnabled = false;
 let invertEnabled = false;
+let colorSwapEnabled = false;
+let colorSwapSource = '#ff0000';
+let colorSwapTarget = '#000000';
+let colorSwapThreshold = 30;
 
 const video = document.getElementById('preview');
 const canvas = document.getElementById('processCanvas');
@@ -289,6 +293,26 @@ function processVideoFrame() {
             rr = 255 - rr;
             gg = 255 - gg;
             bb = 255 - bb;
+        }
+
+        // Apply color swap effect
+        if (colorSwapEnabled) {
+            const sourceRGB = hexToRgb(colorSwapSource);
+            const targetRGB = hexToRgb(colorSwapTarget);
+
+            // Calculate color distance
+            const colorDistance = Math.sqrt(
+                Math.pow(rr - sourceRGB[0], 2) +
+                Math.pow(gg - sourceRGB[1], 2) +
+                Math.pow(bb - sourceRGB[2], 2)
+            );
+
+            // If color is within threshold, swap it
+            if (colorDistance <= colorSwapThreshold) {
+                rr = targetRGB[0];
+                gg = targetRGB[1];
+                bb = targetRGB[2];
+            }
         }
 
         // Store adjusted values
@@ -685,6 +709,26 @@ function updatePreview() {
                 bb = 255 - bb;
             }
 
+            // Apply color swap effect
+            if (colorSwapEnabled) {
+                const sourceRGB = hexToRgb(colorSwapSource);
+                const targetRGB = hexToRgb(colorSwapTarget);
+
+                // Calculate color distance
+                const colorDistance = Math.sqrt(
+                    Math.pow(rr - sourceRGB[0], 2) +
+                    Math.pow(gg - sourceRGB[1], 2) +
+                    Math.pow(bb - sourceRGB[2], 2)
+                );
+
+                // If color is within threshold, swap it
+                if (colorDistance <= colorSwapThreshold) {
+                    rr = targetRGB[0];
+                    gg = targetRGB[1];
+                    bb = targetRGB[2];
+                }
+            }
+
             // Store adjusted values
             data[i] = Math.max(0, Math.min(255, rr));
             data[i + 1] = Math.max(0, Math.min(255, gg));
@@ -875,6 +919,16 @@ function resetControls() {
     document.querySelector('.gaussian-sliders').classList.remove('active');
     invertEnabled = false;
     document.getElementById('invertEnabled').checked = false;
+    colorSwapEnabled = false;
+    document.getElementById('colorSwapEnabled').checked = false;
+    document.getElementById('colorSwapSource').value = '#ff0000';
+    document.getElementById('colorSwapTarget').value = '#000000';
+    document.getElementById('colorSwapThreshold').value = 30;
+    document.getElementById('colorSwapThresholdValue').textContent = '30';
+    document.querySelector('.color-swap-control').classList.remove('active');
+    colorSwapSource = '#ff0000';
+    colorSwapTarget = '#000000';
+    colorSwapThreshold = 30;
 
     // Reset all sliders and their displays
     document.getElementById('contrast').value = 100;
@@ -934,7 +988,6 @@ function randomizeControls() {
     redChannel = (getRandomInt(50, 150) / 100);   // 0.5 to 1.5
     greenChannel = (getRandomInt(50, 150) / 100); // 0.5 to 1.5
     blueChannel = (getRandomInt(50, 150) / 100);  // 0.5 to 1.5
-    xOffset = getRandomInt(-50, 50);           // -50 to 50
     colorizeAmount = getRandomInt(0, 100);
     colorLevels = Math.pow(2, getRandomInt(2, 8)); // 4 to 256 colors in power of 2 steps
     oneBitMode = Math.random() < 0.5;
@@ -976,9 +1029,6 @@ function randomizeControls() {
     document.getElementById('blue').value = blueChannel * 100;
     document.getElementById('blueValue').textContent = Math.round(blueChannel * 100);
 
-    document.getElementById('xOffset').value = xOffset;
-    document.getElementById('xOffsetValue').textContent = xOffset;
-
     document.getElementById('colorizeAmount').value = colorizeAmount;
     document.getElementById('colorizeAmountValue').textContent = colorizeAmount;
 
@@ -1009,6 +1059,21 @@ function randomizeControls() {
     document.querySelector('.gaussian-sliders').classList.toggle('active', gaussianEnabled);
     invertEnabled = Math.random() < 0.5;
     document.getElementById('invertEnabled').checked = invertEnabled;
+    colorSwapEnabled = Math.random() < 0.5;
+    document.getElementById('colorSwapEnabled').checked = colorSwapEnabled;
+    document.querySelector('.color-swap-control').classList.toggle('active', colorSwapEnabled);
+
+    // Random colors for swap
+    const randomSource = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    const randomTarget = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    document.getElementById('colorSwapSource').value = randomSource;
+    document.getElementById('colorSwapTarget').value = randomTarget;
+    colorSwapSource = randomSource;
+    colorSwapTarget = randomTarget;
+
+    colorSwapThreshold = getRandomInt(10, 50);
+    document.getElementById('colorSwapThreshold').value = colorSwapThreshold;
+    document.getElementById('colorSwapThresholdValue').textContent = colorSwapThreshold;
 }
 
 // Add the random button event listener
@@ -1110,5 +1175,28 @@ document.getElementById('gaussianEnabled').onchange = (event) => {
 // Add event listener for invert checkbox
 document.getElementById('invertEnabled').onchange = (event) => {
     invertEnabled = event.target.checked;
+    updateControls();
+};
+
+// Add event listeners
+document.getElementById('colorSwapEnabled').onchange = (event) => {
+    colorSwapEnabled = event.target.checked;
+    document.querySelector('.color-swap-control').classList.toggle('active', colorSwapEnabled);
+    updateControls();
+};
+
+document.getElementById('colorSwapSource').onchange = (event) => {
+    colorSwapSource = event.target.value;
+    updateControls();
+};
+
+document.getElementById('colorSwapTarget').onchange = (event) => {
+    colorSwapTarget = event.target.value;
+    updateControls();
+};
+
+document.getElementById('colorSwapThreshold').oninput = (event) => {
+    colorSwapThreshold = parseInt(event.target.value);
+    document.getElementById('colorSwapThresholdValue').textContent = colorSwapThreshold;
     updateControls();
 };
