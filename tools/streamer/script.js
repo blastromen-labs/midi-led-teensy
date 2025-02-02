@@ -230,17 +230,9 @@ function blendColorize(original, targetRGB, intensity, channel) {
     return original * (1 - intensity) + result * intensity;
 }
 
-// Modify the processVideoFrame function to handle colorize properly
-function processVideoFrame() {
-    const crop = calculateCrop(video.videoWidth, video.videoHeight);
-
-    // Draw with crop
-    ctx.drawImage(video,
-        crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
-        0, 0, PANEL_WIDTH, PANEL_HEIGHT
-    );
-
-    const imageData = ctx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+// Add this shared processing function
+function processFrame(sourceCanvas, sourceCtx) {
+    const imageData = sourceCtx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
     const data = imageData.data;
     const rgbData = new Uint8Array(PANEL_WIDTH * PANEL_HEIGHT * 3);
     let rgbIndex = 0;
@@ -255,9 +247,9 @@ function processVideoFrame() {
         if (colorizeAmount > 0) {
             const targetRGB = hexToRgb(colorizeColor);
             const intensity = colorizeAmount / 100;
-            rr = rr * (1 - intensity) + targetRGB[0] * intensity;
-            gg = gg * (1 - intensity) + targetRGB[1] * intensity;
-            bb = bb * (1 - intensity) + targetRGB[2] * intensity;
+            rr = blendColorize(rr, targetRGB, intensity, redChannel);
+            gg = blendColorize(gg, targetRGB, intensity, greenChannel);
+            bb = blendColorize(bb, targetRGB, intensity, blueChannel);
         }
 
         // Apply color reduction
@@ -269,14 +261,9 @@ function processVideoFrame() {
 
         // Apply 1-bit mode
         if (oneBitMode) {
-            // Calculate luminance
             const luminance = (rr * 0.299 + gg * 0.587 + bb * 0.114);
-
-            // Convert primary and secondary colors from hex to RGB
             const primary = hexToRgb(primaryColor);
             const secondary = hexToRgb(secondaryColor);
-
-            // Apply threshold
             if (luminance >= oneBitThreshold) {
                 rr = primary[0];
                 gg = primary[1];
@@ -300,14 +287,12 @@ function processVideoFrame() {
             const sourceRGB = hexToRgb(colorSwapSource);
             const targetRGB = hexToRgb(colorSwapTarget);
 
-            // Calculate color distance
             const colorDistance = Math.sqrt(
                 Math.pow(rr - sourceRGB[0], 2) +
                 Math.pow(gg - sourceRGB[1], 2) +
                 Math.pow(bb - sourceRGB[2], 2)
             );
 
-            // If color is within threshold, swap it
             if (colorDistance <= colorSwapThreshold) {
                 rr = targetRGB[0];
                 gg = targetRGB[1];
@@ -316,133 +301,42 @@ function processVideoFrame() {
         }
 
         // Store adjusted values
-        rgbData[rgbIndex++] = Math.max(0, Math.min(255, rr));
-        rgbData[rgbIndex++] = Math.max(0, Math.min(255, gg));
-        rgbData[rgbIndex++] = Math.max(0, Math.min(255, bb));
+        data[i] = Math.max(0, Math.min(255, rr));
+        data[i + 1] = Math.max(0, Math.min(255, gg));
+        data[i + 2] = Math.max(0, Math.min(255, bb));
+
+        // Store RGB values for binary output
+        rgbData[rgbIndex++] = data[i];
+        rgbData[rgbIndex++] = data[i + 1];
+        rgbData[rgbIndex++] = data[i + 2];
     }
 
+    sourceCtx.putImageData(imageData, 0, 0);
     return rgbData;
 }
 
-// Modify the adjustPixel function to include Gaussian adjustment
-function adjustPixel(value, contrast, brightness, channel) {
-    // Apply contrast
-    let newValue = ((value / 255 - 0.5) * contrast + 0.5) * 255;
-
-    // Apply brightness
-    newValue += brightness;
-
-    // Apply Gaussian curve adjustment only if enabled
-    if (gaussianEnabled) {
-        const gaussianValue = newValue / 255;
-        const gaussianAdjustment = Math.exp(
-            -Math.pow(gaussianValue - gaussianMid, 2) / (2 * Math.pow(gaussianSpread, 2))
-        );
-        newValue = newValue * (1 + gaussianStrength * gaussianAdjustment);
+// Update the preview function to use the shared processor
+function updatePreview() {
+    if (video.readyState < 2 || isStreaming) {
+        requestAnimationFrame(updatePreview);
+        return;
     }
 
-    // Apply tone adjustments
-    const normalizedValue = newValue / 255;
+    const crop = calculateCrop(video.videoWidth, video.videoHeight);
 
-    // Shadows affect dark areas (0-0.33)
-    if (normalizedValue <= 0.33) {
-        newValue += shadows * (1 - normalizedValue * 3);
-    }
+    // Draw at panel resolution with crop
+    previewCtx.drawImage(video,
+        crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+        0, 0, PANEL_WIDTH, PANEL_HEIGHT
+    );
 
-    // Midtones affect middle range (0.33-0.66)
-    if (normalizedValue > 0.33 && normalizedValue < 0.66) {
-        const midFactor = 1 - Math.abs(normalizedValue - 0.5) * 3;
-        newValue += midtones * midFactor;
-    }
+    // Process the frame
+    processFrame(previewCanvas, previewCtx);
 
-    // Highlights affect bright areas (0.66-1.0)
-    if (normalizedValue >= 0.66) {
-        newValue += highlights * ((normalizedValue - 0.66) * 3);
-    }
-
-    // Apply channel adjustment
-    newValue *= channel;
-
-    // Clamp value between 0 and 255
-    return Math.max(0, Math.min(255, newValue));
+    requestAnimationFrame(updatePreview);
 }
 
-// Modify the calculateCrop function to include xOffset
-function calculateCrop(videoWidth, videoHeight) {
-    const targetAspect = PANEL_WIDTH / PANEL_HEIGHT;
-    const videoAspect = videoWidth / videoHeight;
-
-    let sourceX = 0;
-    let sourceY = 0;
-    let sourceWidth = videoWidth;
-    let sourceHeight = videoHeight;
-
-    if (videoAspect > targetAspect) {
-        // Video is wider than target - crop sides
-        sourceWidth = videoHeight * targetAspect;
-
-        // Calculate the maximum possible offset
-        const maxOffset = (videoWidth - sourceWidth);
-
-        // Apply the offset based on percentage (-100 to 100)
-        sourceX = (videoWidth - sourceWidth) / 2;  // Center position
-        sourceX += (maxOffset / 2) * (xOffset / 100);  // Add offset
-
-        // Clamp sourceX to prevent going out of bounds
-        sourceX = Math.max(0, Math.min(videoWidth - sourceWidth, sourceX));
-    } else if (videoAspect < targetAspect) {
-        // Video is taller than target - crop top/bottom
-        sourceHeight = videoWidth / targetAspect;
-        sourceY = (videoHeight - sourceHeight) / 2;
-    }
-
-    return { sourceX, sourceY, sourceWidth, sourceHeight };
-}
-
-async function streamVideo() {
-    if (!isStreaming || !port) return;
-
-    const now = performance.now();
-
-    // Process current frame
-    const frameData = processVideoFrame();
-
-    try {
-        // Send frame in chunks
-        for (let i = 0; i < frameData.length; i += CHUNK_SIZE) {
-            const chunk = frameData.slice(i, i + CHUNK_SIZE);
-            const writer = port.writable.getWriter();
-            await writer.write(chunk);
-            writer.releaseLock();
-            await new Promise(resolve => setTimeout(resolve, 1));
-        }
-
-        // Update FPS counter
-        frameCount++;
-        if (now - lastFpsTime >= 1000) {
-            const fps = frameCount;
-            document.getElementById('fps').textContent = `FPS: ${fps}`;
-            frameCount = 0;
-            lastFpsTime = now;
-        }
-
-        // Schedule next frame
-        if (isStreaming) {
-            const elapsed = performance.now() - now;
-            const delay = Math.max(0, FRAME_TIME - elapsed);
-            videoLoop = setTimeout(streamVideo, delay);
-        }
-    } catch (error) {
-        console.error('Streaming error:', error);
-        isStreaming = false;
-        document.getElementById('streamButton').disabled = false;
-        document.getElementById('stopButton').disabled = true;
-        document.getElementById('status').className = 'error';
-        document.getElementById('status').textContent = 'Streaming error: ' + error.message;
-    }
-}
-
-// Modify the convertToBin function to use trim points
+// Update the convertToBin function to use the same processor
 async function convertToBin() {
     if (!video.src) {
         document.getElementById('status').className = 'error';
@@ -480,20 +374,27 @@ async function convertToBin() {
         // Process each frame within trim points
         for (let i = startFrame; i < endFrame; i++) {
             // Set video to exact frame time
-            const frameTime = i / TARGET_FPS;
+            video.currentTime = i / TARGET_FPS;
 
-            // Wait for the video to update to the current frame
+            // Wait for the video to seek
             await new Promise(resolve => {
                 video.onseeked = resolve;
-                video.currentTime = frameTime;
             });
 
-            // Process frame with current settings
-            const frameData = processVideoFrame();
+            const crop = calculateCrop(video.videoWidth, video.videoHeight);
+
+            // Draw with crop
+            ctx.drawImage(video,
+                crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+                0, 0, PANEL_WIDTH, PANEL_HEIGHT
+            );
+
+            // Process the frame using the same function as preview
+            const rgbData = processFrame(canvas, ctx);
 
             // Add to binary buffer
-            binData.set(frameData, binOffset);
-            binOffset += frameData.length;
+            binData.set(rgbData, binOffset);
+            binOffset += rgbData.length;
 
             // Update progress
             currentFrame++;
@@ -508,7 +409,6 @@ async function convertToBin() {
         const a = document.createElement('a');
         a.href = url;
 
-        // Add trim info to filename
         const nameWithoutExt = originalFileName.split('.')[0];
         const trimInfo = `_${trimStart.toFixed(1)}s-${trimEnd.toFixed(1)}s`;
         a.download = `${nameWithoutExt}${trimInfo}.bin`;
@@ -548,26 +448,87 @@ document.getElementById('fileInput').onchange = (event) => {
     }
 };
 
-document.getElementById('streamButton').onclick = () => {
-    if (!video.src) {
-        document.getElementById('status').className = 'error';
-        document.getElementById('status').textContent = 'Please select a video file';
-        return;
-    }
+// Add the streamVideo function
+async function streamVideo() {
+    if (!port || !video.src) return;
 
-    if (!port) {
+    const writer = port.writable.getWriter();
+    let lastFrameTime = performance.now();
+    frameCount = 0;
+    lastFpsTime = performance.now();
+
+    try {
+        while (isStreaming) {
+            const currentTime = performance.now();
+            const elapsed = currentTime - lastFrameTime;
+
+            if (elapsed >= FRAME_TIME) {
+                // Process frame using our shared function
+                const crop = calculateCrop(video.videoWidth, video.videoHeight);
+
+                // Draw with crop
+                ctx.drawImage(video,
+                    crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
+                    0, 0, PANEL_WIDTH, PANEL_HEIGHT
+                );
+
+                // Process the frame using shared processor
+                const rgbData = processFrame(canvas, ctx);
+
+                // Send frame in chunks
+                for (let i = 0; i < rgbData.length; i += CHUNK_SIZE) {
+                    const chunk = rgbData.slice(i, i + CHUNK_SIZE);
+                    await writer.write(chunk);
+                }
+
+                frameCount++;
+                if (currentTime - lastFpsTime >= 1000) {
+                    const fps = frameCount;
+                    document.getElementById('fps').textContent = `FPS: ${fps}`;
+                    frameCount = 0;
+                    lastFpsTime = currentTime;
+                }
+
+                lastFrameTime = currentTime;
+
+                // Check if we need to loop
+                if (video.ended) {
+                    if (shouldLoop) {
+                        video.currentTime = trimStart;
+                        video.play();
+                    } else {
+                        isStreaming = false;
+                        break;
+                    }
+                }
+            }
+
+            // Wait for next frame
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    } catch (error) {
+        console.error('Stream error:', error);
         document.getElementById('status').className = 'error';
-        document.getElementById('status').textContent = 'Please connect to Teensy first';
-        return;
+        document.getElementById('status').textContent = 'Streaming error: ' + error.message;
+    } finally {
+        writer.releaseLock();
+        if (!shouldLoop || !isStreaming) {
+            video.pause();
+            document.getElementById('streamButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            document.getElementById('status').className = 'info';
+            document.getElementById('status').textContent = 'Stream ended';
+        }
     }
+}
+
+// Add the stream button click handler
+document.getElementById('streamButton').onclick = () => {
+    if (!port || !video.src) return;
 
     isStreaming = true;
-    video.loop = shouldLoop;
-    video.currentTime = trimStart;  // Start from trim point
+    video.currentTime = trimStart;
     video.play();
-
-    // Clear the preview canvas when starting stream
-    previewCtx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
 
     document.getElementById('streamButton').disabled = true;
     document.getElementById('stopButton').disabled = false;
@@ -576,14 +537,14 @@ document.getElementById('streamButton').onclick = () => {
     streamVideo();
 };
 
+// Add the stop button click handler
 document.getElementById('stopButton').onclick = () => {
     isStreaming = false;
-    clearTimeout(videoLoop);
     video.pause();
     document.getElementById('streamButton').disabled = false;
     document.getElementById('stopButton').disabled = true;
     document.getElementById('status').className = 'info';
-    document.getElementById('status').textContent = 'Streaming stopped';
+    document.getElementById('status').textContent = 'Stream stopped';
 };
 
 document.getElementById('contrast').oninput = (event) => {
@@ -644,107 +605,7 @@ video.addEventListener('ended', () => {
     }
 });
 
-// Modify the updatePreview function to match processVideoFrame
-function updatePreview() {
-    if (video.readyState >= 2 && !isStreaming) {
-        const crop = calculateCrop(video.videoWidth, video.videoHeight);
-
-        // Draw at panel resolution with crop
-        previewCtx.drawImage(video,
-            crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight,
-            0, 0, PANEL_WIDTH, PANEL_HEIGHT
-        );
-
-        // Process the image
-        const imageData = previewCtx.getImageData(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
-        const data = imageData.data;
-
-        for (let i = 0; i < data.length; i += 4) {
-            // Get RGB values
-            let rr = adjustPixel(data[i], contrast, brightness, redChannel);     // R
-            let gg = adjustPixel(data[i + 1], contrast, brightness, greenChannel); // G
-            let bb = adjustPixel(data[i + 2], contrast, brightness, blueChannel);  // B
-
-            // Apply colorize effect after other adjustments
-            if (colorizeAmount > 0) {
-                const targetRGB = hexToRgb(colorizeColor);
-                const intensity = colorizeAmount / 100;
-                rr = rr * (1 - intensity) + targetRGB[0] * intensity;
-                gg = gg * (1 - intensity) + targetRGB[1] * intensity;
-                bb = bb * (1 - intensity) + targetRGB[2] * intensity;
-            }
-
-            // Apply color reduction
-            if (colorLevels < 256) {
-                rr = reduceColors(rr);
-                gg = reduceColors(gg);
-                bb = reduceColors(bb);
-            }
-
-            // Apply 1-bit mode
-            if (oneBitMode) {
-                // Calculate luminance
-                const luminance = (rr * 0.299 + gg * 0.587 + bb * 0.114);
-
-                // Convert primary and secondary colors from hex to RGB
-                const primary = hexToRgb(primaryColor);
-                const secondary = hexToRgb(secondaryColor);
-
-                // Apply threshold
-                if (luminance >= oneBitThreshold) {
-                    rr = primary[0];
-                    gg = primary[1];
-                    bb = primary[2];
-                } else {
-                    rr = secondary[0];
-                    gg = secondary[1];
-                    bb = secondary[2];
-                }
-            }
-
-            // Apply invert effect
-            if (invertEnabled) {
-                rr = 255 - rr;
-                gg = 255 - gg;
-                bb = 255 - bb;
-            }
-
-            // Apply color swap effect
-            if (colorSwapEnabled) {
-                const sourceRGB = hexToRgb(colorSwapSource);
-                const targetRGB = hexToRgb(colorSwapTarget);
-
-                // Calculate color distance
-                const colorDistance = Math.sqrt(
-                    Math.pow(rr - sourceRGB[0], 2) +
-                    Math.pow(gg - sourceRGB[1], 2) +
-                    Math.pow(bb - sourceRGB[2], 2)
-                );
-
-                // If color is within threshold, swap it
-                if (colorDistance <= colorSwapThreshold) {
-                    rr = targetRGB[0];
-                    gg = targetRGB[1];
-                    bb = targetRGB[2];
-                }
-            }
-
-            // Store adjusted values
-            data[i] = Math.max(0, Math.min(255, rr));
-            data[i + 1] = Math.max(0, Math.min(255, gg));
-            data[i + 2] = Math.max(0, Math.min(255, bb));
-            // Alpha channel remains unchanged
-        }
-
-        previewCtx.putImageData(imageData, 0, 0);
-    }
-
-    if (!video.paused) {
-        requestAnimationFrame(updatePreview);
-    }
-}
-
-// Replace the updateControls function with this:
+// Modify the updateControls function with the new processFrame function
 function updateControls() {
     if (!isStreaming && !video.paused) {
         requestAnimationFrame(updatePreview);
@@ -1200,3 +1061,74 @@ document.getElementById('colorSwapThreshold').oninput = (event) => {
     document.getElementById('colorSwapThresholdValue').textContent = colorSwapThreshold;
     updateControls();
 };
+
+// Add this function back near the top with other utility functions
+function calculateCrop(videoWidth, videoHeight) {
+    const videoAspect = videoWidth / videoHeight;
+    const panelAspect = PANEL_WIDTH / PANEL_HEIGHT;
+
+    let sourceWidth, sourceHeight, sourceX, sourceY;
+
+    if (videoAspect > panelAspect) {
+        // Video is wider than panel
+        sourceHeight = videoHeight;
+        sourceWidth = videoHeight * panelAspect;
+        sourceY = 0;
+        sourceX = ((videoWidth - sourceWidth) / 2) + (xOffset / 100 * (videoWidth - sourceWidth));
+    } else {
+        // Video is taller than panel
+        sourceWidth = videoWidth;
+        sourceHeight = videoWidth / panelAspect;
+        sourceX = 0;
+        sourceY = (videoHeight - sourceHeight) / 2;
+    }
+
+    return {
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight
+    };
+}
+
+// Also add back the adjustPixel function that was lost
+function adjustPixel(value, contrast, brightness, channel) {
+    // Apply contrast
+    let newValue = ((value / 255 - 0.5) * contrast + 0.5) * 255;
+
+    // Apply brightness
+    newValue += brightness;
+
+    // Apply Gaussian curve adjustment only if enabled
+    if (gaussianEnabled) {
+        const gaussianValue = newValue / 255;
+        const gaussianAdjustment = Math.exp(
+            -Math.pow(gaussianValue - gaussianMid, 2) / (2 * Math.pow(gaussianSpread, 2))
+        );
+        newValue = newValue * (1 + gaussianStrength * gaussianAdjustment);
+    }
+
+    // Apply tone adjustments
+    const normalizedValue = newValue / 255;
+
+    // Shadows affect dark areas (0-0.33)
+    if (normalizedValue <= 0.33) {
+        newValue += shadows * (1 - normalizedValue * 3);
+    }
+
+    // Midtones affect middle areas (0.33-0.66)
+    if (normalizedValue > 0.33 && normalizedValue <= 0.66) {
+        const midtoneFactor = (normalizedValue - 0.33) * 3;
+        newValue += midtones * (1 - Math.abs(midtoneFactor - 0.5) * 2);
+    }
+
+    // Highlights affect bright areas (0.66-1.0)
+    if (normalizedValue > 0.66) {
+        newValue += highlights * ((normalizedValue - 0.66) * 3);
+    }
+
+    // Apply channel multiplier
+    newValue *= channel;
+
+    return newValue;
+}
