@@ -105,7 +105,7 @@ bool imageDisplayed = false;
 unsigned long lastFrameTime = 0;
 const unsigned long frameDelay = 33; // Keep this for ~30 fps base rate
 
-const int MAX_MAPPINGS = 20; // Maximum number of video/image mappings
+const int MAX_MAPPINGS = 128; // Maximum number of video/image mappings (full MIDI range)
 
 struct Mapping
 {
