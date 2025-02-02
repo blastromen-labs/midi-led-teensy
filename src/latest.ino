@@ -1006,6 +1006,24 @@ unsigned long lastSerialDataTime = 0;  // Track when we last received data
 bool wasSerialActive = false;  // Track if serial video was active in previous loop
 bool serialStreamActive = false;  // Tracks if we're currently receiving a stream
 
+// Add these global variables near the top with other globals
+unsigned long fpsFrameCount = 0;
+unsigned long lastFpsTime = 0;
+
+// Add this new function near other utility functions
+void updateAndPrintFPS(const char* source) {
+    unsigned long currentTime = millis();
+    fpsFrameCount++;
+
+    if (currentTime - lastFpsTime >= 1000) {
+        Serial.print(source);
+        Serial.print(" FPS: ");
+        Serial.println(fpsFrameCount);
+        fpsFrameCount = 0;
+        lastFpsTime = currentTime;
+    }
+}
+
 // Add this function with other utility functions
 void clearScreen() {
     // Clear all LEDs
@@ -1058,15 +1076,7 @@ void handleSerialVideo() {
             leds.show();
         }
 
-        serialFrameCount++;
-
-        // FPS calculation
-        if (currentTime - lastSerialFpsTime >= 1000) {
-            float fps = serialFrameCount * 1000.0f / (currentTime - lastSerialFpsTime);
-            Serial.printf("Serial Video FPS: %.1f\n", fps);
-            serialFrameCount = 0;
-            lastSerialFpsTime = currentTime;
-        }
+        updateAndPrintFPS("Serial");
     }
 }
 
@@ -1138,6 +1148,8 @@ void handleSDVideo() {
                     }
                 }
             }
+
+            updateAndPrintFPS("SD Card");
         }
         else if (videoLooping) {
             if (isReversed) {
