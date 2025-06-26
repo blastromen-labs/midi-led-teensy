@@ -85,7 +85,15 @@ struct GroupState
     uint8_t green;
 };
 
+struct StrobeState
+{
+    uint8_t blue;
+    uint8_t red;
+    uint8_t green;
+};
+
 GroupState groupStates[numGroups] = {0};
+StrobeState strobeStates[numGroups] = {0};
 bool ledStateChanged = false;
 
 byte frameBuffer[totalLeds * 3];
@@ -620,9 +628,9 @@ void updateLEDs()
             // If this LED is controlled by strobe, use strobe values directly
             if (strobeActive[ledIndex]) {
                 leds.setPixel(ledIndex,
-                    groupStates[group].red,
-                    groupStates[group].green,
-                    groupStates[group].blue);
+                    strobeStates[group].red,
+                    strobeStates[group].green,
+                    strobeStates[group].blue);
                 continue;  // Skip all other processing for this LED
             }
 
@@ -836,17 +844,19 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
         int group = ledIndex / ledsPerGroup;
         strobeActive[ledIndex] = state;
         if (state && brightness > 0) {
-            groupStates[group].red = isWhite || isRed ? brightness : 0;
-            groupStates[group].green = isWhite || isGreen ? brightness : 0;
-            groupStates[group].blue = isWhite || isBlue ? brightness : 0;
+            // Set strobe colors in separate storage
+            strobeStates[group].red = isWhite || isRed ? brightness : 0;
+            strobeStates[group].green = isWhite || isGreen ? brightness : 0;
+            strobeStates[group].blue = isWhite || isBlue ? brightness : 0;
         } else {
-            if (isRed) groupStates[group].red = 0;
-            if (isGreen) groupStates[group].green = 0;
-            if (isBlue) groupStates[group].blue = 0;
+            // Clear strobe colors when strobe is off
+            if (isRed) strobeStates[group].red = 0;
+            if (isGreen) strobeStates[group].green = 0;
+            if (isBlue) strobeStates[group].blue = 0;
             if (isWhite) {
-                groupStates[group].red = 0;
-                groupStates[group].green = 0;
-                groupStates[group].blue = 0;
+                strobeStates[group].red = 0;
+                strobeStates[group].green = 0;
+                strobeStates[group].blue = 0;
             }
         }
     };
