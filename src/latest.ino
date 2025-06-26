@@ -839,7 +839,7 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
 
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Helper function to set strobe state with color
+        // Helper function to set strobe state with color
     auto setStrobeState = [&](int x, int y, bool state, bool isWhite, bool isRed, bool isGreen, bool isBlue) {
         int ledIndex = mapXYtoLedIndex(x, y);
         int group = ledIndex / ledsPerGroup;
@@ -882,6 +882,15 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
             }
         }
         ledStateChanged = true;
+
+        // If this is a note off event, force an immediate LED update to ensure
+        // underlying colors from other channels are properly displayed
+        if (!isNoteOn) {
+            updateLEDs();
+            if (!leds.busy()) {
+                leds.show();
+            }
+        }
         return;
     }
 
@@ -993,6 +1002,15 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
     }
 
     ledStateChanged = true;
+
+    // If this is a note off event, force an immediate LED update to ensure
+    // underlying colors from other channels are properly displayed
+    if (!isNoteOn) {
+        updateLEDs();
+        if (!leds.busy()) {
+            leds.show();
+        }
+    }
 }
 
 bool anyVideoNotesActive() {
