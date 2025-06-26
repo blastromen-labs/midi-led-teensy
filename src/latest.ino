@@ -22,6 +22,7 @@
 // 13.1.25, add midi CC for video speed and direction.
 // 14.1.25, add midi CC for video scale.
 // 25.1.25, add video stream from serial port
+// 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -85,7 +86,15 @@ struct GroupState
     uint8_t green;
 };
 
+struct StrobeState
+{
+    uint8_t blue;
+    uint8_t red;
+    uint8_t green;
+};
+
 GroupState groupStates[numGroups] = {0};
+StrobeState strobeStates[numGroups] = {0};
 bool ledStateChanged = false;
 
 byte frameBuffer[totalLeds * 3];
@@ -286,27 +295,18 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     // Set the color based on velocity
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Get the LED index range for this group
-    int startLed = groupIndex * ledsPerGroup;
-    int endLed = startLed + ledsPerGroup;
-
-    // Only update if LED is not controlled by strobe
-    for (int i = startLed; i < endLed; i++) {
-        if (!strobeActive[i]) {
-            // Update the appropriate color based on the color section
-            // Now we only update the specific color component without affecting others
-            switch (colorSection) {
-                case 0:  // Blue section
-                    groupStates[groupIndex].blue = brightness;
-                    break;
-                case 1:  // Red section
-                    groupStates[groupIndex].red = brightness;
-                    break;
-                case 2:  // Green section
-                    groupStates[groupIndex].green = brightness;
-                    break;
-            }
-        }
+    // Always update groupStates regardless of strobe status
+    // This ensures the underlying state is correct when strobe ends
+    switch (colorSection) {
+        case 0:  // Blue section
+            groupStates[groupIndex].blue = brightness;
+            break;
+        case 1:  // Red section
+            groupStates[groupIndex].red = brightness;
+            break;
+        case 2:  // Green section
+            groupStates[groupIndex].green = brightness;
+            break;
     }
 
     ledStateChanged = true;
@@ -339,20 +339,19 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     for (int x = 0; x < width; x++) {
         for (int y = rowIndex; y < rowIndex + 8; y++) {
             int ledIndex = mapXYtoLedIndex(x, y);
-            // Only update if LED is not controlled by strobe
-            if (!strobeActive[ledIndex]) {
-                int group = ledIndex / ledsPerGroup;
-                switch (colorSection) {
-                    case 0:  // Blue section
-                        groupStates[group].blue = brightness;
-                        break;
-                    case 1:  // Red section
-                        groupStates[group].red = brightness;
-                        break;
-                    case 2:  // Green section
-                        groupStates[group].green = brightness;
-                        break;
-                }
+            int group = ledIndex / ledsPerGroup;
+            // Always update groupStates regardless of strobe status
+            // This ensures the underlying state is correct when strobe ends
+            switch (colorSection) {
+                case 0:  // Blue section
+                    groupStates[group].blue = brightness;
+                    break;
+                case 1:  // Red section
+                    groupStates[group].red = brightness;
+                    break;
+                case 2:  // Green section
+                    groupStates[group].green = brightness;
+                    break;
             }
         }
     }
@@ -620,9 +619,9 @@ void updateLEDs()
             // If this LED is controlled by strobe, use strobe values directly
             if (strobeActive[ledIndex]) {
                 leds.setPixel(ledIndex,
-                    groupStates[group].red,
-                    groupStates[group].green,
-                    groupStates[group].blue);
+                    strobeStates[group].red,
+                    strobeStates[group].green,
+                    strobeStates[group].blue);
                 continue;  // Skip all other processing for this LED
             }
 
@@ -830,23 +829,25 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
 
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Helper function to set strobe state with color
+        // Helper function to set strobe state with color
     auto setStrobeState = [&](int x, int y, bool state, bool isWhite, bool isRed, bool isGreen, bool isBlue) {
         int ledIndex = mapXYtoLedIndex(x, y);
         int group = ledIndex / ledsPerGroup;
         strobeActive[ledIndex] = state;
         if (state && brightness > 0) {
-            groupStates[group].red = isWhite || isRed ? brightness : 0;
-            groupStates[group].green = isWhite || isGreen ? brightness : 0;
-            groupStates[group].blue = isWhite || isBlue ? brightness : 0;
+            // Set strobe colors in separate storage
+            strobeStates[group].red = isWhite || isRed ? brightness : 0;
+            strobeStates[group].green = isWhite || isGreen ? brightness : 0;
+            strobeStates[group].blue = isWhite || isBlue ? brightness : 0;
         } else {
-            if (isRed) groupStates[group].red = 0;
-            if (isGreen) groupStates[group].green = 0;
-            if (isBlue) groupStates[group].blue = 0;
+            // Clear strobe colors when strobe is off
+            if (isRed) strobeStates[group].red = 0;
+            if (isGreen) strobeStates[group].green = 0;
+            if (isBlue) strobeStates[group].blue = 0;
             if (isWhite) {
-                groupStates[group].red = 0;
-                groupStates[group].green = 0;
-                groupStates[group].blue = 0;
+                strobeStates[group].red = 0;
+                strobeStates[group].green = 0;
+                strobeStates[group].blue = 0;
             }
         }
     };
@@ -860,24 +861,47 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
         }
     };
 
+    // White row strobe effects (notes 114-103)
+    if (pitch >= 103 && pitch <= 114) {
+        int rowIndex = (114 - pitch) * 8;  // Convert note to row (each row is 8 LEDs high)
+
+        // Light up the entire row (8 LEDs high) in white
+        for (int x = 0; x < width; x++) {
+            for (int y = rowIndex; y < rowIndex + 8; y++) {
+                setStrobeState(x, y, isNoteOn, true, false, false, false);
+            }
+        }
+        ledStateChanged = true;
+
+        // If this is a note off event, force an immediate LED update to ensure
+        // underlying colors from other channels are properly displayed
+        if (!isNoteOn) {
+            updateLEDs();
+            if (!leds.busy()) {
+                leds.show();
+            }
+        }
+        return;
+    }
+
     // Determine color and pattern based on note range
     bool isWhite = pitch >= 115;                    // 127-115: White
-    bool isBlue = pitch >= 102 && pitch < 115;      // 114-102: Blue
-    bool isRed = pitch >= 89 && pitch < 102;        // 101-89: Red
-    bool isGreen = pitch >= 76 && pitch < 89;       // 88-76: Green
-    bool isCyan = pitch >= 63 && pitch < 76;        // 75-63: Cyan (Blue + Green)
-    bool isMagenta = pitch >= 50 && pitch < 63;     // 62-50: Magenta (Blue + Red)
-    bool isYellow = pitch >= 37 && pitch < 50;      // 49-37: Yellow (Red + Green)
+    bool isBlue = pitch >= 89 && pitch < 103;       // 102-89: Blue (shifted down from 102)
+    bool isRed = pitch >= 76 && pitch < 89;         // 88-76: Red
+    bool isGreen = pitch >= 63 && pitch < 76;       // 75-63: Green
+    bool isCyan = pitch >= 50 && pitch < 63;        // 62-50: Cyan (Blue + Green)
+    bool isMagenta = pitch >= 37 && pitch < 50;     // 49-37: Magenta (Blue + Red)
+    bool isYellow = pitch >= 24 && pitch < 37;      // 36-24: Yellow (Red + Green)
 
     // Calculate pattern index within each color range
     int patternIndex;
     if (isWhite) patternIndex = 127 - pitch;        // 0-12 for white
-    else if (isBlue) patternIndex = 114 - pitch;    // 0-12 for blue
-    else if (isRed) patternIndex = 101 - pitch;     // 0-12 for red
-    else if (isGreen) patternIndex = 88 - pitch;    // 0-12 for green
-    else if (isCyan) patternIndex = 75 - pitch;     // 0-12 for cyan
-    else if (isMagenta) patternIndex = 62 - pitch;  // 0-12 for magenta
-    else patternIndex = 49 - pitch;                 // 0-12 for yellow
+    else if (isBlue) patternIndex = 102 - pitch;    // 0-13 for blue (shifted down)
+    else if (isRed) patternIndex = 88 - pitch;      // 0-12 for red
+    else if (isGreen) patternIndex = 75 - pitch;    // 0-12 for green
+    else if (isCyan) patternIndex = 62 - pitch;     // 0-12 for cyan
+    else if (isMagenta) patternIndex = 49 - pitch;  // 0-12 for magenta
+    else patternIndex = 36 - pitch;                 // 0-12 for yellow
 
     // Apply the appropriate pattern in the correct order
     switch (patternIndex) {
@@ -959,9 +983,24 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
                         isGreen || isCyan || isYellow,
                         isBlue || isCyan || isMagenta);
             break;
+        case 13: // Full screen (added for extended blue range)
+            applyPattern(0, width, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,
+                        isGreen || isCyan || isYellow,
+                        isBlue || isCyan || isMagenta);
+            break;
     }
 
     ledStateChanged = true;
+
+    // If this is a note off event, force an immediate LED update to ensure
+    // underlying colors from other channels are properly displayed
+    if (!isNoteOn) {
+        updateLEDs();
+        if (!leds.busy()) {
+            leds.show();
+        }
+    }
 }
 
 bool anyVideoNotesActive() {

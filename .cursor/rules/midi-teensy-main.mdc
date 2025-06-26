@@ -1,0 +1,6 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+This is Teensy Arduino project that uses MIDI to light up LED lights. Project is in /src/latest.ino
