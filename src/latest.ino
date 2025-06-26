@@ -22,6 +22,7 @@
 // 13.1.25, add midi CC for video speed and direction.
 // 14.1.25, add midi CC for video scale.
 // 25.1.25, add video stream from serial port
+// 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -870,24 +871,38 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
         }
     };
 
+    // White row strobe effects (notes 114-103)
+    if (pitch >= 103 && pitch <= 114) {
+        int rowIndex = (114 - pitch) * 8;  // Convert note to row (each row is 8 LEDs high)
+
+        // Light up the entire row (8 LEDs high) in white
+        for (int x = 0; x < width; x++) {
+            for (int y = rowIndex; y < rowIndex + 8; y++) {
+                setStrobeState(x, y, isNoteOn, true, false, false, false);
+            }
+        }
+        ledStateChanged = true;
+        return;
+    }
+
     // Determine color and pattern based on note range
     bool isWhite = pitch >= 115;                    // 127-115: White
-    bool isBlue = pitch >= 102 && pitch < 115;      // 114-102: Blue
-    bool isRed = pitch >= 89 && pitch < 102;        // 101-89: Red
-    bool isGreen = pitch >= 76 && pitch < 89;       // 88-76: Green
-    bool isCyan = pitch >= 63 && pitch < 76;        // 75-63: Cyan (Blue + Green)
-    bool isMagenta = pitch >= 50 && pitch < 63;     // 62-50: Magenta (Blue + Red)
-    bool isYellow = pitch >= 37 && pitch < 50;      // 49-37: Yellow (Red + Green)
+    bool isBlue = pitch >= 89 && pitch < 103;       // 102-89: Blue (shifted down from 102)
+    bool isRed = pitch >= 76 && pitch < 89;         // 88-76: Red
+    bool isGreen = pitch >= 63 && pitch < 76;       // 75-63: Green
+    bool isCyan = pitch >= 50 && pitch < 63;        // 62-50: Cyan (Blue + Green)
+    bool isMagenta = pitch >= 37 && pitch < 50;     // 49-37: Magenta (Blue + Red)
+    bool isYellow = pitch >= 24 && pitch < 37;      // 36-24: Yellow (Red + Green)
 
     // Calculate pattern index within each color range
     int patternIndex;
     if (isWhite) patternIndex = 127 - pitch;        // 0-12 for white
-    else if (isBlue) patternIndex = 114 - pitch;    // 0-12 for blue
-    else if (isRed) patternIndex = 101 - pitch;     // 0-12 for red
-    else if (isGreen) patternIndex = 88 - pitch;    // 0-12 for green
-    else if (isCyan) patternIndex = 75 - pitch;     // 0-12 for cyan
-    else if (isMagenta) patternIndex = 62 - pitch;  // 0-12 for magenta
-    else patternIndex = 49 - pitch;                 // 0-12 for yellow
+    else if (isBlue) patternIndex = 102 - pitch;    // 0-13 for blue (shifted down)
+    else if (isRed) patternIndex = 88 - pitch;      // 0-12 for red
+    else if (isGreen) patternIndex = 75 - pitch;    // 0-12 for green
+    else if (isCyan) patternIndex = 62 - pitch;     // 0-12 for cyan
+    else if (isMagenta) patternIndex = 49 - pitch;  // 0-12 for magenta
+    else patternIndex = 36 - pitch;                 // 0-12 for yellow
 
     // Apply the appropriate pattern in the correct order
     switch (patternIndex) {
@@ -965,6 +980,12 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
             break;
         case 12: // Column 5
             applyPattern(32, 40, 0, height, isWhite,
+                        isRed || isMagenta || isYellow,
+                        isGreen || isCyan || isYellow,
+                        isBlue || isCyan || isMagenta);
+            break;
+        case 13: // Full screen (added for extended blue range)
+            applyPattern(0, width, 0, height, isWhite,
                         isRed || isMagenta || isYellow,
                         isGreen || isCyan || isYellow,
                         isBlue || isCyan || isMagenta);
