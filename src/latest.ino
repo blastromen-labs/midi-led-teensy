@@ -295,27 +295,18 @@ void handleLEDNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     // Set the color based on velocity
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-    // Get the LED index range for this group
-    int startLed = groupIndex * ledsPerGroup;
-    int endLed = startLed + ledsPerGroup;
-
-    // Only update if LED is not controlled by strobe
-    for (int i = startLed; i < endLed; i++) {
-        if (!strobeActive[i]) {
-            // Update the appropriate color based on the color section
-            // Now we only update the specific color component without affecting others
-            switch (colorSection) {
-                case 0:  // Blue section
-                    groupStates[groupIndex].blue = brightness;
-                    break;
-                case 1:  // Red section
-                    groupStates[groupIndex].red = brightness;
-                    break;
-                case 2:  // Green section
-                    groupStates[groupIndex].green = brightness;
-                    break;
-            }
-        }
+    // Always update groupStates regardless of strobe status
+    // This ensures the underlying state is correct when strobe ends
+    switch (colorSection) {
+        case 0:  // Blue section
+            groupStates[groupIndex].blue = brightness;
+            break;
+        case 1:  // Red section
+            groupStates[groupIndex].red = brightness;
+            break;
+        case 2:  // Green section
+            groupStates[groupIndex].green = brightness;
+            break;
     }
 
     ledStateChanged = true;
@@ -348,20 +339,19 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     for (int x = 0; x < width; x++) {
         for (int y = rowIndex; y < rowIndex + 8; y++) {
             int ledIndex = mapXYtoLedIndex(x, y);
-            // Only update if LED is not controlled by strobe
-            if (!strobeActive[ledIndex]) {
-                int group = ledIndex / ledsPerGroup;
-                switch (colorSection) {
-                    case 0:  // Blue section
-                        groupStates[group].blue = brightness;
-                        break;
-                    case 1:  // Red section
-                        groupStates[group].red = brightness;
-                        break;
-                    case 2:  // Green section
-                        groupStates[group].green = brightness;
-                        break;
-                }
+            int group = ledIndex / ledsPerGroup;
+            // Always update groupStates regardless of strobe status
+            // This ensures the underlying state is correct when strobe ends
+            switch (colorSection) {
+                case 0:  // Blue section
+                    groupStates[group].blue = brightness;
+                    break;
+                case 1:  // Red section
+                    groupStates[group].red = brightness;
+                    break;
+                case 2:  // Green section
+                    groupStates[group].green = brightness;
+                    break;
             }
         }
     }
