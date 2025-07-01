@@ -23,6 +23,7 @@
 // 14.1.25, add midi CC for video scale.
 // 25.1.25, add video stream from serial port
 // 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
+// 26.1.25, add midi CC for image scale on channel 4 (same CC 8 as video)
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -64,7 +65,7 @@ const int X_POSITION_CC = 4;
 const int Y_POSITION_CC = 5;
 const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal speed, CC 10 is good since it is Panning CC
 const int VIDEO_DIRECTION_CC = 7;
-const int VIDEO_SCALE_CC = 8;  // Expression controller for video scaling, CC 8 is good since this is balance and defaults to 64
+const int VIDEO_SCALE_CC = 8;  // Expression controller for video and image scaling, CC 8 is good since this is balance and defaults to 64
 
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
@@ -169,6 +170,9 @@ bool videoDirectionModified = false; // Track if direction has been modified by 
 
 float videoScale = 1.0f;        // Default scale
 bool videoScaleModified = false; // Track if scale has been modified
+
+float imageScale = 1.0f;        // Default scale for images
+bool imageScaleModified = false; // Track if image scale has been modified
 
 int mapCCToOffset(int value, int maxOffset)
 {
@@ -491,6 +495,24 @@ void handleControlChange(byte channel, byte control, byte value)
     else if (channel == IMAGE_MIDI_CHANNEL)
     {
         adjustments = &imageAdjustments;
+
+        // Handle image scaling
+        if (control == VIDEO_SCALE_CC) {  // Using same CC as video scale
+            imageScaleModified = true;
+            if (value == 64) {
+                imageScale = 1.0f;  // Normal size
+            } else if (value < 64) {
+                // Exponential scaling for smaller sizes (0.25x to 1x)
+                float normalized = value / 64.0f;  // 0 to 1
+                imageScale = 0.25f + (pow(normalized, 2) * 0.75f);
+            } else {
+                // Exponential scaling for larger sizes (1x to 4x)
+                float normalized = (value - 64) / 63.0f;  // 0 to 1
+                imageScale = 1.0f + (pow(normalized, 2) * 3.0f);  // Up to 4x
+            }
+            ledStateChanged = true;  // Trigger display update
+            return;
+        }
     }
 
     if (adjustments)
@@ -707,14 +729,24 @@ void updateLEDs()
                 // Apply image layer (middle layer)
                 if (imageLayerActive)
                 {
-                    // Calculate image coordinates with offset
-                    int imgX = x - imageOffsetX;
-                    int imgY = y - imageOffsetY;
+                    // Calculate scaled coordinates
+                    float scale = imageScaleModified ? imageScale : 1.0f;
+
+                    // Calculate center point for scaling
+                    int centerX = width / 2;
+                    int centerY = height / 2;
+
+                    // Calculate image coordinates with offset and scaling
+                    float imgX = (x - centerX) / scale + centerX - imageOffsetX;
+                    float imgY = (y - centerY) / scale + centerY - imageOffsetY;
 
                     // Check if the pixel is within the image bounds
                     if (imgX >= 0 && imgX < width && imgY >= 0 && imgY < height)
                     {
-                        int imgBufferIndex = (imgY * width + imgX) * 3;
+                        // Convert to integer coordinates
+                        int srcX = (int)imgX;
+                        int srcY = (int)imgY;
+                        int imgBufferIndex = (srcY * width + srcX) * 3;
                         int ir = imageBuffer[imgBufferIndex];
                         int ig = imageBuffer[imgBufferIndex + 1];
                         int ib = imageBuffer[imgBufferIndex + 2];
