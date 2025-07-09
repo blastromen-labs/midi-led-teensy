@@ -94,8 +94,16 @@ struct StrobeState
     uint8_t green;
 };
 
+struct StrobeBaseState
+{
+    uint8_t blue;
+    uint8_t red;
+    uint8_t green;
+};
+
 GroupState groupStates[numGroups] = {0};
 StrobeState strobeStates[numGroups] = {0};
+StrobeBaseState strobeBaseStates[numGroups] = {0};  // Store original strobe colors
 bool ledStateChanged = false;
 
 byte frameBuffer[totalLeds * 3];
@@ -145,6 +153,7 @@ struct HSVAdjustments
 HSVAdjustments videoAdjustments = {0, 255, 255};    // Default to no adjustment
 HSVAdjustments imageAdjustments = {0, 255, 255};    // Default to no adjustment
 HSVAdjustments ledBlockAdjustments = {0, 255, 255}; // Default to no adjustment
+HSVAdjustments strobeAdjustments = {0, 255, 255};   // Default to no adjustment for strobe
 
 bool videoLooping = true;  // Set to true by default, or add a MIDI CC to control it
 unsigned long videoStartPosition = 0;
@@ -514,8 +523,12 @@ void handleControlChange(byte channel, byte control, byte value)
             return;
         }
     }
+    else if (channel == STROBE_MIDI_CHANNEL)
+    {
+        adjustments = &strobeAdjustments;
+    }
 
-    if (adjustments)
+        if (adjustments)
     {
         switch (control)
         {
@@ -549,6 +562,9 @@ void handleControlChange(byte channel, byte control, byte value)
             }
             break;
         }
+
+
+
         ledStateChanged = true;
     }
 }
@@ -638,12 +654,32 @@ void updateLEDs()
             int ledIndex = mapXYtoLedIndex(x, y);
             int group = ledIndex / ledsPerGroup;
 
-            // If this LED is controlled by strobe, use strobe values directly
+            // If this LED is controlled by strobe, apply HSV and use strobe values directly
             if (strobeActive[ledIndex]) {
-                leds.setPixel(ledIndex,
-                    strobeStates[group].red,
-                    strobeStates[group].green,
-                    strobeStates[group].blue);
+                // Get base strobe colors
+                uint8_t r = strobeBaseStates[group].red;
+                uint8_t g = strobeBaseStates[group].green;
+                uint8_t b = strobeBaseStates[group].blue;
+
+                // Apply HSV transformations if there's any color
+                if (r > 0 || g > 0 || b > 0) {
+                    CRGB rgbColor(r, g, b);
+                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+                    // Apply HSV adjustments
+                    hsvColor.hue += strobeAdjustments.hue;
+                    hsvColor.saturation = scale8(hsvColor.saturation, strobeAdjustments.saturation);
+                    hsvColor.value = scale8(hsvColor.value, strobeAdjustments.value);
+
+                    // Convert back to RGB
+                    hsv2rgb_rainbow(hsvColor, rgbColor);
+
+                    r = rgbColor.r;
+                    g = rgbColor.g;
+                    b = rgbColor.b;
+                }
+
+                leds.setPixel(ledIndex, r, g, b);
                 continue;  // Skip all other processing for this LED
             }
 
@@ -861,26 +897,26 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
 
     uint8_t brightness = isNoteOn ? mapVelocityToBrightness(velocity) : 0;
 
-        // Helper function to set strobe state with color
+            // Helper function to set strobe state with color
     auto setStrobeState = [&](int x, int y, bool state, bool isWhite, bool isRed, bool isGreen, bool isBlue) {
         int ledIndex = mapXYtoLedIndex(x, y);
         int group = ledIndex / ledsPerGroup;
         strobeActive[ledIndex] = state;
         if (state && brightness > 0) {
-            // Set strobe colors in separate storage
-            strobeStates[group].red = isWhite || isRed ? brightness : 0;
-            strobeStates[group].green = isWhite || isGreen ? brightness : 0;
-            strobeStates[group].blue = isWhite || isBlue ? brightness : 0;
+            // Store base RGB values (before HSV transformation)
+            uint8_t r = isWhite || isRed ? brightness : 0;
+            uint8_t g = isWhite || isGreen ? brightness : 0;
+            uint8_t b = isWhite || isBlue ? brightness : 0;
+
+            // Store original base colors
+            strobeBaseStates[group].red = r;
+            strobeBaseStates[group].green = g;
+            strobeBaseStates[group].blue = b;
         } else {
             // Clear strobe colors when strobe is off
-            if (isRed) strobeStates[group].red = 0;
-            if (isGreen) strobeStates[group].green = 0;
-            if (isBlue) strobeStates[group].blue = 0;
-            if (isWhite) {
-                strobeStates[group].red = 0;
-                strobeStates[group].green = 0;
-                strobeStates[group].blue = 0;
-            }
+            strobeBaseStates[group].red = 0;
+            strobeBaseStates[group].green = 0;
+            strobeBaseStates[group].blue = 0;
         }
     };
 
@@ -1244,6 +1280,8 @@ void handleSDVideo() {
         }
     }
 }
+
+
 
 void setup()
 {
