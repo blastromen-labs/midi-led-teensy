@@ -35,3 +35,4 @@ Conversation on Teensy forum: https://forum.pjrc.com/index.php?threads/project-m
 | 7   | VIDEO_DIRECTION |
 | 8   | VIDEO_SCALE     |
 | 10  | VIDEO_SPEED     |
+| 12  | VIDEO_MIRROR    |
