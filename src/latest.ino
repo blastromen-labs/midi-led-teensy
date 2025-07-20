@@ -24,6 +24,7 @@
 // 25.1.25, add video stream from serial port
 // 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // 26.1.25, add midi CC for image scale on channel 4 (same CC 8 as video)
+// 26.1.25, add video mirror feature with MIDI CC 12 on channel 3 (value 127 = mirrored)
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -66,6 +67,7 @@ const int Y_POSITION_CC = 5;
 const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal speed, CC 10 is good since it is Panning CC
 const int VIDEO_DIRECTION_CC = 7;
 const int VIDEO_SCALE_CC = 8;  // Expression controller for video and image scaling, CC 8 is good since this is balance and defaults to 64
+const int VIDEO_MIRROR_CC = 12;  // Effect Control 1 for horizontal mirroring
 
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
@@ -182,6 +184,9 @@ bool videoScaleModified = false; // Track if scale has been modified
 
 float imageScale = 1.0f;        // Default scale for images
 bool imageScaleModified = false; // Track if image scale has been modified
+
+bool videoMirrored = false;      // Track if video should be mirrored horizontally
+bool videoMirrorModified = false; // Track if mirror has been modified by CC
 
 int mapCCToOffset(int value, int maxOffset)
 {
@@ -495,6 +500,11 @@ void handleControlChange(byte channel, byte control, byte value)
             }
             return;
         }
+        else if (control == VIDEO_MIRROR_CC) {
+            videoMirrorModified = true;
+            videoMirrored = (value == 127);
+            return;
+        }
         adjustments = &videoAdjustments;
     }
     else if (channel == LED_MIDI_CHANNEL_LEFT || channel == LED_MIDI_CHANNEL_RIGHT)
@@ -726,6 +736,11 @@ void updateLEDs()
                         // Convert to integer coordinates
                         int srcX = (int)vidX;
                         int srcY = (int)vidY;
+
+                        // Apply horizontal mirroring if enabled
+                        if (videoMirrorModified && videoMirrored) {
+                            srcX = (width - 1) - srcX;
+                        }
 
                         int vidBufferIndex = (srcY * width + srcX) * 3;
                         r = frameBuffer[vidBufferIndex];
