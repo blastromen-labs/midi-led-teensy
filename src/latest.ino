@@ -479,10 +479,8 @@ void handleControlChange(byte channel, byte control, byte value)
     if (channel == VIDEO_MIDI_CHANNEL) {
         if (control == VIDEO_BANK_CC) {
             currentVideoBank = value;
-            // Stop current video when bank changes
-            if (videoPlaying) {
-                stopVideo();
-            }
+            // Don't stop video here - let the next note-on handle it
+            // This allows CC and note to be sent simultaneously from DAW
             return;
         }
         else if (control == VIDEO_DIRECTION_CC) {
@@ -537,10 +535,8 @@ void handleControlChange(byte channel, byte control, byte value)
     {
         if (control == IMAGE_BANK_CC) {
             currentImageBank = value;
-            // Stop current image when bank changes
-            if (imageLayerActive) {
-                stopImage();
-            }
+            // Don't stop image here - let the next note-on handle it
+            // This allows CC and note to be sent simultaneously from DAW
             return;
         }
 
