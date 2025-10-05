@@ -59,6 +59,7 @@ const int ROW_MIDI_CHANNEL = 5;
 const int STROBE_MIDI_CHANNEL = 6;
 
 // MIDI CC assignments
+const int VIDEO_BANK_CC = 0;    // Bank Select for video
 const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
@@ -68,6 +69,7 @@ const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal spee
 const int VIDEO_DIRECTION_CC = 7;
 const int VIDEO_SCALE_CC = 8;  // Expression controller for video and image scaling, CC 8 is good since this is balance and defaults to 64
 const int VIDEO_MIRROR_CC = 12;  // Effect Control 1 for horizontal mirroring
+const int IMAGE_BANK_CC = 20;   // Bank Select for images
 
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
@@ -130,6 +132,7 @@ const int MAX_MAPPINGS = 128; // Maximum number of video/image mappings (full MI
 struct Mapping
 {
     byte note;
+    byte bank;          // Bank number for this mapping
     char filename[13];  // 8.3 filename format + null terminator
     uint8_t brightness; // Add brightness to the Mapping struct
 };
@@ -187,6 +190,9 @@ bool imageScaleModified = false; // Track if image scale has been modified
 
 bool videoMirrored = false;      // Track if video should be mirrored horizontally
 bool videoMirrorModified = false; // Track if mirror has been modified by CC
+
+byte currentVideoBank = 0;       // Current video bank (default 0)
+byte currentImageBank = 0;       // Current image bank (default 0)
 
 int mapCCToOffset(int value, int maxOffset)
 {
@@ -390,12 +396,19 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
     {
         String line = mapFile.readStringUntil('\n');
         line.trim();
-        int commaIndex = line.indexOf(',');
-        if (commaIndex > 0)
+
+        // Parse: MIDI_NOTE,BANK_NUMBER,FILE_NAME
+        int firstComma = line.indexOf(',');
+        if (firstComma > 0)
         {
-            mappings[count].note = line.substring(0, commaIndex).toInt();
-            line.substring(commaIndex + 1).toCharArray(mappings[count].filename, 13);
-            count++;
+            int secondComma = line.indexOf(',', firstComma + 1);
+            if (secondComma > firstComma)
+            {
+                mappings[count].note = line.substring(0, firstComma).toInt();
+                mappings[count].bank = line.substring(firstComma + 1, secondComma).toInt();
+                line.substring(secondComma + 1).toCharArray(mappings[count].filename, 13);
+                count++;
+            }
         }
     }
 
@@ -419,10 +432,10 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
         // Mark the new note as active
         activeVideoNotes[pitch] = true;
 
-        // Look up and start the new video
+        // Look up and start the new video (only for current bank)
         for (int i = 0; i < numVideos; i++) {
-            if (videoMappings[i].note == pitch) {
-                startVideo(videoMappings[i].filename);
+            if (videoMappings[i].note == pitch && videoMappings[i].bank == currentVideoBank) {
+                startVideo(videoMappings[i].filename, videoMappings[i].bank);
                 return;
             }
         }
@@ -444,10 +457,10 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     {
         for (int i = 0; i < numImages; i++)
         {
-            if (imageMappings[i].note == pitch)
+            if (imageMappings[i].note == pitch && imageMappings[i].bank == currentImageBank)
             {
                 imageMappings[i].brightness = mapVelocityToBrightness(velocity); // Set brightness based on velocity
-                startImage(imageMappings[i].filename);
+                startImage(imageMappings[i].filename, imageMappings[i].bank);
                 return;
             }
         }
@@ -463,7 +476,15 @@ void handleControlChange(byte channel, byte control, byte value)
     HSVAdjustments *adjustments = nullptr;
 
     if (channel == VIDEO_MIDI_CHANNEL) {
-        if (control == VIDEO_DIRECTION_CC) {
+        if (control == VIDEO_BANK_CC) {
+            currentVideoBank = value;
+            // Stop current video when bank changes
+            if (videoPlaying) {
+                stopVideo();
+            }
+            return;
+        }
+        else if (control == VIDEO_DIRECTION_CC) {
             videoDirectionModified = true;
             videoReversed = (value == 127);
             return;
@@ -513,6 +534,15 @@ void handleControlChange(byte channel, byte control, byte value)
     }
     else if (channel == IMAGE_MIDI_CHANNEL)
     {
+        if (control == IMAGE_BANK_CC) {
+            currentImageBank = value;
+            // Stop current image when bank changes
+            if (imageLayerActive) {
+                stopImage();
+            }
+            return;
+        }
+
         adjustments = &imageAdjustments;
 
         // Handle image scaling
@@ -579,14 +609,20 @@ void handleControlChange(byte channel, byte control, byte value)
     }
 }
 
-void startVideo(const char* filename)
+void startVideo(const char* filename, byte bank)
 {
     if (videoPlaying) {
         stopVideo();
     }
 
-    mediaFile = SD.open(filename, FILE_READ);
+    // Construct path: /video/BANK_NUMBER/filename
+    char fullPath[32];
+    snprintf(fullPath, sizeof(fullPath), "/video/%d/%s", bank, filename);
+
+    mediaFile = SD.open(fullPath, FILE_READ);
     if (!mediaFile) {
+        Serial.print("Failed to open video: ");
+        Serial.println(fullPath);
         return;
     }
 
@@ -628,9 +664,13 @@ void stopVideo()
     }
 }
 
-void startImage(const char *filename)
+void startImage(const char *filename, byte bank)
 {
-    File imageFile = SD.open(filename, FILE_READ);
+    // Construct path: /image/BANK_NUMBER/filename
+    char fullPath[32];
+    snprintf(fullPath, sizeof(fullPath), "/image/%d/%s", bank, filename);
+
+    File imageFile = SD.open(fullPath, FILE_READ);
     if (imageFile)
     {
         imageFile.read(imageBuffer, totalLeds * 3);
@@ -643,7 +683,7 @@ void startImage(const char *filename)
     else
     {
         Serial.print("Failed to open image file: ");
-        Serial.println(filename);
+        Serial.println(fullPath);
     }
 }
 
