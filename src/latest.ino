@@ -25,7 +25,7 @@
 // 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // 26.1.25, add midi CC for image scale on channel 4 (same CC 8 as video)
 // 26.1.25, add video mirror feature with MIDI CC 12 on channel 3 (value 127 = mirrored)
-// 5.11.25, add midi CC for video (CC 0) and image (CC 20) bank (value 0-127 = bank). folder structure /video/0/file.bin /image/0/file.bin
+// 5.11.25, add midi CC 0 for video (channel 3) and image (channel 4) bank selection (value 0-127 = bank). folder structure /video/0/file.bin /image/0/file.bin
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -60,7 +60,7 @@ const int ROW_MIDI_CHANNEL = 5;
 const int STROBE_MIDI_CHANNEL = 6;
 
 // MIDI CC assignments
-const int VIDEO_BANK_CC = 0;    // Bank Select for video
+const int BANK_CC = 0;          // Bank Select (used on both video and image channels)
 const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
@@ -70,7 +70,6 @@ const int VIDEO_SPEED_CC = 10; // this needs to be set to 64 to have normal spee
 const int VIDEO_DIRECTION_CC = 7;
 const int VIDEO_SCALE_CC = 8;  // Expression controller for video and image scaling, CC 8 is good since this is balance and defaults to 64
 const int VIDEO_MIRROR_CC = 12;  // Effect Control 1 for horizontal mirroring
-const int IMAGE_BANK_CC = 20;   // Bank Select for images
 
 // Row and block configuration
 const int ROWS_PER_PANEL = 32;
@@ -477,7 +476,7 @@ void handleControlChange(byte channel, byte control, byte value)
     HSVAdjustments *adjustments = nullptr;
 
     if (channel == VIDEO_MIDI_CHANNEL) {
-        if (control == VIDEO_BANK_CC) {
+        if (control == BANK_CC) {
             currentVideoBank = value;
             // Don't stop video here - let the next note-on handle it
             // This allows CC and note to be sent simultaneously from DAW
@@ -533,7 +532,7 @@ void handleControlChange(byte channel, byte control, byte value)
     }
     else if (channel == IMAGE_MIDI_CHANNEL)
     {
-        if (control == IMAGE_BANK_CC) {
+        if (control == BANK_CC) {
             currentImageBank = value;
             // Don't stop image here - let the next note-on handle it
             // This allows CC and note to be sent simultaneously from DAW
