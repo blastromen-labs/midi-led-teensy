@@ -617,8 +617,8 @@ void startVideo(const char* filename, byte bank)
 
     mediaFile = SD.open(fullPath, FILE_READ);
     if (!mediaFile) {
-        Serial.print("Failed to open video: ");
-        Serial.println(fullPath);
+        // Serial.print("Failed to open video: ");
+        // Serial.println(fullPath);
         return;
     }
 
@@ -678,8 +678,8 @@ void startImage(const char *filename, byte bank)
     }
     else
     {
-        Serial.print("Failed to open image file: ");
-        Serial.println(fullPath);
+        // Serial.print("Failed to open image file: ");
+        // Serial.println(fullPath);
     }
 }
 
@@ -688,7 +688,7 @@ void stopImage()
     imageLayerActive = false;
     memset(imageBuffer, 0, sizeof(imageBuffer));
     updateLEDs();
-    Serial.println("Stopped image");
+    // Serial.println("Stopped image");
 }
 
 void updateLEDs()
@@ -1174,9 +1174,9 @@ void updateAndPrintFPS(const char* source) {
     fpsFrameCount++;
 
     if (currentTime - lastFpsTime >= 1000) {
-        Serial.print(source);
-        Serial.print(" FPS: ");
-        Serial.println(fpsFrameCount);
+        // Serial.print(source);
+        // Serial.print(" FPS: ");
+        // Serial.println(fpsFrameCount);
         fpsFrameCount = 0;
         lastFpsTime = currentTime;
     }
@@ -1203,7 +1203,7 @@ void handleSerialVideo() {
         // Mark stream as active
         if (!serialStreamActive) {
             serialStreamActive = true;
-            Serial.println("Serial video stream started");
+            // Serial.println("Serial video stream started");
         }
 
         // Copy to frame buffer and update display
@@ -1388,7 +1388,7 @@ void loop()
     else if (serialStreamActive && (currentTime - lastSerialDataTime > SERIAL_TIMEOUT)) {
         clearScreen();
         serialStreamActive = false;
-        Serial.println("Serial video stream ended - cleared LEDs");
+        // Serial.println("Serial video stream ended - cleared LEDs");
 
         // Fall back to SD video
         handleSDVideo();
