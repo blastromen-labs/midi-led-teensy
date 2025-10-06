@@ -142,10 +142,6 @@ Mapping imageMappings[MAX_MAPPINGS];
 int numVideos = 0;
 int numImages = 0;
 
-// Gamma correction table
-const float gammaValue = 2.2;
-uint8_t gammaTable[256];
-
 char currentImageFilename[13] = {0}; // To store the current image filename
 
 struct HSVAdjustments
@@ -206,14 +202,6 @@ int mapCCToOffset(int value, int maxOffset)
     else
     {
         return map(value, 65, 127, 1, maxOffset);
-    }
-}
-
-void createGammaTable()
-{
-    for (int i = 0; i < 256; i++)
-    {
-        gammaTable[i] = (uint8_t)(pow((float)i / 255.0, gammaValue) * 255.0 + 0.5);
     }
 }
 
@@ -1366,8 +1354,6 @@ void setup()
 
     loadMappings("video_map.txt", videoMappings, numVideos);
     loadMappings("image_map.txt", imageMappings, numImages);
-
-    createGammaTable(); // Create gamma correction table
 
     startupTest(); // Run the startup test sequence
 }
