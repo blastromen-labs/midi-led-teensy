@@ -25,6 +25,7 @@
 // 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // 26.1.25, add midi CC for image scale on channel 4 (same CC 8 as video)
 // 26.1.25, add video mirror feature with MIDI CC 12 on channel 3 (value 127 = mirrored)
+// 5.11.25, add midi CC 0 for video (channel 3) and image (channel 4) bank selection (value 0-127 = bank). folder structure /video/0/file.bin /image/0/file.bin
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -59,6 +60,7 @@ const int ROW_MIDI_CHANNEL = 5;
 const int STROBE_MIDI_CHANNEL = 6;
 
 // MIDI CC assignments
+const int BANK_CC = 0;          // Bank Select (used on both video and image channels)
 const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
@@ -130,6 +132,7 @@ const int MAX_MAPPINGS = 128; // Maximum number of video/image mappings (full MI
 struct Mapping
 {
     byte note;
+    byte bank;          // Bank number for this mapping
     char filename[13];  // 8.3 filename format + null terminator
     uint8_t brightness; // Add brightness to the Mapping struct
 };
@@ -138,10 +141,6 @@ Mapping videoMappings[MAX_MAPPINGS];
 Mapping imageMappings[MAX_MAPPINGS];
 int numVideos = 0;
 int numImages = 0;
-
-// Gamma correction table
-const float gammaValue = 2.2;
-uint8_t gammaTable[256];
 
 char currentImageFilename[13] = {0}; // To store the current image filename
 
@@ -188,6 +187,9 @@ bool imageScaleModified = false; // Track if image scale has been modified
 bool videoMirrored = false;      // Track if video should be mirrored horizontally
 bool videoMirrorModified = false; // Track if mirror has been modified by CC
 
+byte currentVideoBank = 0;       // Current video bank (default 0)
+byte currentImageBank = 0;       // Current image bank (default 0)
+
 int mapCCToOffset(int value, int maxOffset)
 {
     // Ensure the full range of movement, including off-screen, while keeping 64 centered
@@ -200,14 +202,6 @@ int mapCCToOffset(int value, int maxOffset)
     else
     {
         return map(value, 65, 127, 1, maxOffset);
-    }
-}
-
-void createGammaTable()
-{
-    for (int i = 0; i < 256; i++)
-    {
-        gammaTable[i] = (uint8_t)(pow((float)i / 255.0, gammaValue) * 255.0 + 0.5);
     }
 }
 
@@ -390,12 +384,19 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
     {
         String line = mapFile.readStringUntil('\n');
         line.trim();
-        int commaIndex = line.indexOf(',');
-        if (commaIndex > 0)
+
+        // Parse: MIDI_NOTE,BANK_NUMBER,FILE_NAME
+        int firstComma = line.indexOf(',');
+        if (firstComma > 0)
         {
-            mappings[count].note = line.substring(0, commaIndex).toInt();
-            line.substring(commaIndex + 1).toCharArray(mappings[count].filename, 13);
-            count++;
+            int secondComma = line.indexOf(',', firstComma + 1);
+            if (secondComma > firstComma)
+            {
+                mappings[count].note = line.substring(0, firstComma).toInt();
+                mappings[count].bank = line.substring(firstComma + 1, secondComma).toInt();
+                line.substring(secondComma + 1).toCharArray(mappings[count].filename, 13);
+                count++;
+            }
         }
     }
 
@@ -419,10 +420,10 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
         // Mark the new note as active
         activeVideoNotes[pitch] = true;
 
-        // Look up and start the new video
+        // Look up and start the new video (only for current bank)
         for (int i = 0; i < numVideos; i++) {
-            if (videoMappings[i].note == pitch) {
-                startVideo(videoMappings[i].filename);
+            if (videoMappings[i].note == pitch && videoMappings[i].bank == currentVideoBank) {
+                startVideo(videoMappings[i].filename, videoMappings[i].bank);
                 return;
             }
         }
@@ -444,10 +445,10 @@ void handleImageNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     {
         for (int i = 0; i < numImages; i++)
         {
-            if (imageMappings[i].note == pitch)
+            if (imageMappings[i].note == pitch && imageMappings[i].bank == currentImageBank)
             {
                 imageMappings[i].brightness = mapVelocityToBrightness(velocity); // Set brightness based on velocity
-                startImage(imageMappings[i].filename);
+                startImage(imageMappings[i].filename, imageMappings[i].bank);
                 return;
             }
         }
@@ -463,7 +464,13 @@ void handleControlChange(byte channel, byte control, byte value)
     HSVAdjustments *adjustments = nullptr;
 
     if (channel == VIDEO_MIDI_CHANNEL) {
-        if (control == VIDEO_DIRECTION_CC) {
+        if (control == BANK_CC) {
+            currentVideoBank = value;
+            // Don't stop video here - let the next note-on handle it
+            // This allows CC and note to be sent simultaneously from DAW
+            return;
+        }
+        else if (control == VIDEO_DIRECTION_CC) {
             videoDirectionModified = true;
             videoReversed = (value == 127);
             return;
@@ -513,6 +520,13 @@ void handleControlChange(byte channel, byte control, byte value)
     }
     else if (channel == IMAGE_MIDI_CHANNEL)
     {
+        if (control == BANK_CC) {
+            currentImageBank = value;
+            // Don't stop image here - let the next note-on handle it
+            // This allows CC and note to be sent simultaneously from DAW
+            return;
+        }
+
         adjustments = &imageAdjustments;
 
         // Handle image scaling
@@ -579,14 +593,20 @@ void handleControlChange(byte channel, byte control, byte value)
     }
 }
 
-void startVideo(const char* filename)
+void startVideo(const char* filename, byte bank)
 {
     if (videoPlaying) {
         stopVideo();
     }
 
-    mediaFile = SD.open(filename, FILE_READ);
+    // Construct path: /video/BANK_NUMBER/filename
+    char fullPath[32];
+    snprintf(fullPath, sizeof(fullPath), "/video/%d/%s", bank, filename);
+
+    mediaFile = SD.open(fullPath, FILE_READ);
     if (!mediaFile) {
+        // Serial.print("Failed to open video: ");
+        // Serial.println(fullPath);
         return;
     }
 
@@ -628,9 +648,13 @@ void stopVideo()
     }
 }
 
-void startImage(const char *filename)
+void startImage(const char *filename, byte bank)
 {
-    File imageFile = SD.open(filename, FILE_READ);
+    // Construct path: /image/BANK_NUMBER/filename
+    char fullPath[32];
+    snprintf(fullPath, sizeof(fullPath), "/image/%d/%s", bank, filename);
+
+    File imageFile = SD.open(fullPath, FILE_READ);
     if (imageFile)
     {
         imageFile.read(imageBuffer, totalLeds * 3);
@@ -642,8 +666,8 @@ void startImage(const char *filename)
     }
     else
     {
-        Serial.print("Failed to open image file: ");
-        Serial.println(filename);
+        // Serial.print("Failed to open image file: ");
+        // Serial.println(fullPath);
     }
 }
 
@@ -652,7 +676,7 @@ void stopImage()
     imageLayerActive = false;
     memset(imageBuffer, 0, sizeof(imageBuffer));
     updateLEDs();
-    Serial.println("Stopped image");
+    // Serial.println("Stopped image");
 }
 
 void updateLEDs()
@@ -1138,9 +1162,9 @@ void updateAndPrintFPS(const char* source) {
     fpsFrameCount++;
 
     if (currentTime - lastFpsTime >= 1000) {
-        Serial.print(source);
-        Serial.print(" FPS: ");
-        Serial.println(fpsFrameCount);
+        // Serial.print(source);
+        // Serial.print(" FPS: ");
+        // Serial.println(fpsFrameCount);
         fpsFrameCount = 0;
         lastFpsTime = currentTime;
     }
@@ -1167,7 +1191,7 @@ void handleSerialVideo() {
         // Mark stream as active
         if (!serialStreamActive) {
             serialStreamActive = true;
-            Serial.println("Serial video stream started");
+            // Serial.println("Serial video stream started");
         }
 
         // Copy to frame buffer and update display
@@ -1331,8 +1355,6 @@ void setup()
     loadMappings("video_map.txt", videoMappings, numVideos);
     loadMappings("image_map.txt", imageMappings, numImages);
 
-    createGammaTable(); // Create gamma correction table
-
     startupTest(); // Run the startup test sequence
 }
 
@@ -1352,7 +1374,7 @@ void loop()
     else if (serialStreamActive && (currentTime - lastSerialDataTime > SERIAL_TIMEOUT)) {
         clearScreen();
         serialStreamActive = false;
-        Serial.println("Serial video stream ended - cleared LEDs");
+        // Serial.println("Serial video stream ended - cleared LEDs");
 
         // Fall back to SD video
         handleSDVideo();
