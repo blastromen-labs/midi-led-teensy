@@ -469,7 +469,6 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
         activeVideoNotes[pitch] = true;
 
         // Look up and start the new video (only for current bank)
-        bool foundMapping = false;
         for (int i = 0; i < numVideos; i++) {
             if (videoMappings[i].note == pitch && videoMappings[i].bank == currentVideoBank) {
                 // Serial.print("  Found mapping: note=");
@@ -478,20 +477,11 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
                 // Serial.print(currentVideoBank);
                 // Serial.print(" filename=");
                 // Serial.println(videoMappings[i].filename);
-                foundMapping = true;
                 startVideo(videoMappings[i].filename, videoMappings[i].bank);
                 return;
             }
         }
 
-        if (!foundMapping) {
-            // Serial.print("  ERROR: No mapping found for note=");
-            // Serial.print(pitch);
-            // Serial.print(" in bank=");
-            // Serial.println(currentVideoBank);
-            // Serial.print("  Total video mappings loaded: ");
-            // Serial.println(numVideos);
-        }
     }
     else {
         // Note off
