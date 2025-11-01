@@ -127,7 +127,7 @@ bool imageDisplayed = false;
 unsigned long lastFrameTime = 0;
 const unsigned long frameDelay = 33; // Keep this for ~30 fps base rate
 
-const int MAX_MAPPINGS = 128; // Maximum number of video/image mappings (full MIDI range)
+const int MAX_MAPPINGS = 512; // Maximum number of video/image mappings across all banks (increased from 128 to support bank system)
 
 struct Mapping
 {
@@ -373,17 +373,34 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
 
 void loadMappings(const char *filename, Mapping *mappings, int &count)
 {
+    Serial.print("Loading mappings from: ");
+    Serial.println(filename);
+
     File mapFile = SD.open(filename, FILE_READ);
     if (!mapFile)
     {
+        Serial.print("ERROR: Failed to open mapping file: ");
+        Serial.println(filename);
         return;
     }
 
     count = 0;
-    while (mapFile.available() && count < MAX_MAPPINGS)
+    int skippedLines = 0;
+    while (mapFile.available())
     {
         String line = mapFile.readStringUntil('\n');
         line.trim();
+
+        // Skip empty lines
+        if (line.length() == 0) {
+            continue;
+        }
+
+        // Check if we've hit the mapping limit
+        if (count >= MAX_MAPPINGS) {
+            skippedLines++;
+            continue;
+        }
 
         // Parse: MIDI_NOTE,BANK_NUMBER,FILE_NAME
         int firstComma = line.indexOf(',');
@@ -395,9 +412,33 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
                 mappings[count].note = line.substring(0, firstComma).toInt();
                 mappings[count].bank = line.substring(firstComma + 1, secondComma).toInt();
                 line.substring(secondComma + 1).toCharArray(mappings[count].filename, 13);
+
+                Serial.print("  Loaded mapping #");
+                Serial.print(count);
+                Serial.print(": note=");
+                Serial.print(mappings[count].note);
+                Serial.print(" bank=");
+                Serial.print(mappings[count].bank);
+                Serial.print(" file=");
+                Serial.println(mappings[count].filename);
+
                 count++;
             }
         }
+    }
+
+    Serial.print("Total mappings loaded from ");
+    Serial.print(filename);
+    Serial.print(": ");
+    Serial.println(count);
+
+    if (skippedLines > 0) {
+        Serial.print("WARNING: ");
+        Serial.print(skippedLines);
+        Serial.print(" mappings were skipped due to MAX_MAPPINGS limit (");
+        Serial.print(MAX_MAPPINGS);
+        Serial.println(")");
+        Serial.println("Consider increasing MAX_MAPPINGS constant if you need more mappings.");
     }
 
     mapFile.close();
@@ -410,6 +451,13 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
     }
 
     if (isNoteOn && velocity > 0) {
+        // Serial.print("Video Note ON: pitch=");
+        // Serial.print(pitch);
+        // Serial.print(" velocity=");
+        // Serial.print(velocity);
+        // Serial.print(" currentVideoBank=");
+        // Serial.println(currentVideoBank);
+
         // First, clear any existing video if this is a new note
         if (videoPlaying) {
             stopVideo();  // Stop current video immediately
@@ -423,13 +471,22 @@ void handleVideoNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn
         // Look up and start the new video (only for current bank)
         for (int i = 0; i < numVideos; i++) {
             if (videoMappings[i].note == pitch && videoMappings[i].bank == currentVideoBank) {
+                // Serial.print("  Found mapping: note=");
+                // Serial.print(pitch);
+                // Serial.print(" bank=");
+                // Serial.print(currentVideoBank);
+                // Serial.print(" filename=");
+                // Serial.println(videoMappings[i].filename);
                 startVideo(videoMappings[i].filename, videoMappings[i].bank);
                 return;
             }
         }
+
     }
     else {
         // Note off
+        // Serial.print("Video Note OFF: pitch=");
+        // Serial.println(pitch);
         activeVideoNotes[pitch] = false;
     }
 
@@ -465,6 +522,10 @@ void handleControlChange(byte channel, byte control, byte value)
 
     if (channel == VIDEO_MIDI_CHANNEL) {
         if (control == BANK_CC) {
+            // Serial.print("Video Bank CC received: old bank=");
+            // Serial.print(currentVideoBank);
+            // Serial.print(" new bank=");
+            // Serial.println(value);
             currentVideoBank = value;
             // Don't stop video here - let the next note-on handle it
             // This allows CC and note to be sent simultaneously from DAW
@@ -603,12 +664,23 @@ void startVideo(const char* filename, byte bank)
     char fullPath[32];
     snprintf(fullPath, sizeof(fullPath), "/video/%d/%s", bank, filename);
 
+    // Serial.print("  Attempting to open video: ");
+    // Serial.println(fullPath);
+
     mediaFile = SD.open(fullPath, FILE_READ);
     if (!mediaFile) {
-        // Serial.print("Failed to open video: ");
+        // Serial.print("  ERROR: Failed to open video file: ");
         // Serial.println(fullPath);
+        // Serial.println("  Possible issues:");
+        // Serial.println("    - File does not exist");
+        // Serial.println("    - Path is incorrect");
+        // Serial.println("    - SD card read error");
         return;
     }
+
+    // Serial.print("  SUCCESS: Video file opened, size=");
+    // Serial.print(mediaFile.size());
+    // Serial.println(" bytes");
 
     videoPlaying = true;
     videoFileSize = mediaFile.size();
@@ -1351,9 +1423,12 @@ void setup()
         return;
     }
     Serial.println("SD card initialized.");
+    Serial.println("========================================");
 
     loadMappings("video_map.txt", videoMappings, numVideos);
+    Serial.println("========================================");
     loadMappings("image_map.txt", imageMappings, numImages);
+    Serial.println("========================================");
 
     startupTest(); // Run the startup test sequence
 }
