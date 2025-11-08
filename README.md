@@ -27,7 +27,6 @@ Conversation on Teensy forum: https://forum.pjrc.com/index.php?threads/project-m
 
 | CC  | Function        | Channel | Description                                          |
 | --- | --------------- | ------- | ---------------------------------------------------- |
-| 0   | VIDEO_BANK      | 3       | Select video bank (0-127)                            |
 | 1   | HUE             | All     | Hue adjustment (0-127)                               |
 | 2   | SATURATION      | All     | Saturation adjustment (0-127)                        |
 | 3   | VALUE           | All     | Value/brightness adjustment (0-127)                  |
@@ -37,7 +36,7 @@ Conversation on Teensy forum: https://forum.pjrc.com/index.php?threads/project-m
 | 8   | VIDEO_SCALE     | 3, 4    | Video/image scale (64=1x, <64 zoom out, >64 zoom in) |
 | 10  | VIDEO_SPEED     | 3       | Video playback speed (64=normal, 0=pause)            |
 | 12  | VIDEO_MIRROR    | 3       | Horizontal mirror (127=mirrored)                     |
-| 20  | IMAGE_BANK      | 4       | Select image bank (0-127)                            |
+| 20  | BANK_SELECT     | 3, 4    | Select video/image bank (0-127)                      |
 
 ## Bank System
 
@@ -45,10 +44,10 @@ The system supports multiple banks for organizing videos and images. Each bank c
 
 ### Selecting Banks
 
-- **Video Bank**: Send CC 0 on channel 3 with value 0-127
+- **Video Bank**: Send CC 20 on channel 3 with value 0-127
 - **Image Bank**: Send CC 20 on channel 4 with value 0-127
 - Default bank is 0 for both video and images
-- Changing banks automatically stops the currently playing video/image
+- Bank selection uses the same CC (20) on different channels
 
 ### File Structure
 
@@ -109,7 +108,7 @@ Example `image_map.txt`:
 
 ### Usage Example
 
-1. **Select video bank 1**: Send CC 0 with value 1 on channel 3
+1. **Select video bank 1**: Send CC 20 with value 1 on channel 3
 2. **Play video from bank 1**: Send note-on for note 127 on channel 3
 3. **Select image bank 2**: Send CC 20 with value 2 on channel 4
 4. **Display image from bank 2**: Send note-on for note 127 on channel 4
