@@ -25,7 +25,7 @@
 // 25.1.25, add white row strobe effects on MIDI channel 6 (notes 114-103)
 // 26.1.25, add midi CC for image scale on channel 4 (same CC 8 as video)
 // 26.1.25, add video mirror feature with MIDI CC 12 on channel 3 (value 127 = mirrored)
-// 5.11.25, add midi CC 0 for video (channel 3) and image (channel 4) bank selection (value 0-127 = bank). folder structure /video/0/file.bin /image/0/file.bin
+// 5.11.25, add midi CC 20 for video (channel 3) and image (channel 4) bank selection (value 0-127 = bank). folder structure /video/0/file.bin /image/0/file.bin
 // |c-1|c-2|c-3|c-4|c-5|
 // |---|---|---|---|---|
 // |1.1|3.2|4.1|6.2|7.1|
@@ -60,7 +60,7 @@ const int ROW_MIDI_CHANNEL = 5;
 const int STROBE_MIDI_CHANNEL = 6;
 
 // MIDI CC assignments
-const int BANK_CC = 0;          // Bank Select (used on both video and image channels)
+const int BANK_CC = 20;         // Bank Select (used on both video and image channels)
 const int HUE_CC = 1;
 const int SATURATION_CC = 2;
 const int VALUE_CC = 3;
