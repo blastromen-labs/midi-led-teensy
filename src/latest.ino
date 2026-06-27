@@ -210,6 +210,30 @@ uint8_t mapVelocityToBrightness(uint8_t velocity)
     return map(velocity, 0, 127, 0, 255);
 }
 
+bool isHSVAdjustmentsNeutral(const HSVAdjustments& adj)
+{
+    return adj.hue == 0 && adj.saturation == 255 && adj.value == 255;
+}
+
+void applyHSVAdjustments(int& r, int& g, int& b, const HSVAdjustments& adj)
+{
+    if (isHSVAdjustmentsNeutral(adj)) {
+        return;
+    }
+
+    CRGB rgbColor(r, g, b);
+    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
+
+    hsvColor.hue += adj.hue;
+    hsvColor.saturation = scale8(hsvColor.saturation, adj.saturation);
+    hsvColor.value = scale8(hsvColor.value, adj.value);
+
+    hsv2rgb_rainbow(hsvColor, rgbColor);
+    r = rgbColor.r;
+    g = rgbColor.g;
+    b = rgbColor.b;
+}
+
 int mapXYtoLedIndex(int x, int y) {
     // Determine which panel we're in
     int panel_column = x / PANEL_WIDTH;
@@ -769,20 +793,11 @@ void updateLEDs()
 
                 // Apply HSV transformations if there's any color
                 if (r > 0 || g > 0 || b > 0) {
-                    CRGB rgbColor(r, g, b);
-                    CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                    // Apply HSV adjustments
-                    hsvColor.hue += strobeAdjustments.hue;
-                    hsvColor.saturation = scale8(hsvColor.saturation, strobeAdjustments.saturation);
-                    hsvColor.value = scale8(hsvColor.value, strobeAdjustments.value);
-
-                    // Convert back to RGB
-                    hsv2rgb_rainbow(hsvColor, rgbColor);
-
-                    r = rgbColor.r;
-                    g = rgbColor.g;
-                    b = rgbColor.b;
+                    int sr = r, sg = g, sb = b;
+                    applyHSVAdjustments(sr, sg, sb, strobeAdjustments);
+                    r = sr;
+                    g = sg;
+                    b = sb;
                 }
 
                 leds.setPixel(ledIndex, r, g, b);
@@ -849,18 +864,7 @@ void updateLEDs()
                         // Apply threshold to video content
                         if (brightness > brightnessThreshold)
                         {
-                            // Apply HSV adjustments to video
-                            CRGB rgbColor(r, g, b);
-                            CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                            hsvColor.hue += videoAdjustments.hue;
-                            hsvColor.saturation = scale8(hsvColor.saturation, videoAdjustments.saturation);
-                            hsvColor.value = scale8(hsvColor.value, videoAdjustments.value);
-
-                            hsv2rgb_rainbow(hsvColor, rgbColor);
-                            r = rgbColor.r;
-                            g = rgbColor.g;
-                            b = rgbColor.b;
+                            applyHSVAdjustments(r, g, b, videoAdjustments);
                         }
                         else
                         {
@@ -909,21 +913,7 @@ void updateLEDs()
                             }
                         }
 
-                        // Convert RGB to HSV
-                        CRGB rgbColor(ir, ig, ib);
-                        CHSV hsvColor = rgb2hsv_approximate(rgbColor);
-
-                        // Apply HSV adjustments
-                        hsvColor.hue += imageAdjustments.hue;
-                        hsvColor.saturation = scale8(hsvColor.saturation, imageAdjustments.saturation);
-                        hsvColor.value = scale8(hsvColor.value, imageAdjustments.value);
-
-                        // Convert back to RGB
-                        hsv2rgb_rainbow(hsvColor, rgbColor);
-
-                        ir = rgbColor.r;
-                        ig = rgbColor.g;
-                        ib = rgbColor.b;
+                        applyHSVAdjustments(ir, ig, ib, imageAdjustments);
 
                         // Apply brightness
                         ir = (ir * brightness) >> 8;
@@ -960,38 +950,44 @@ void updateLEDs()
                 int lb = groupStates[group].blue;
 
                 if (lr > 0 || lg > 0 || lb > 0) {
-                    // Create separate RGB colors for each component
-                    CRGB rgbColorR(lr, 0, 0);
-                    CRGB rgbColorG(0, lg, 0);
-                    CRGB rgbColorB(0, 0, lb);
+                    if (isHSVAdjustmentsNeutral(ledBlockAdjustments)) {
+                        r = lr;
+                        g = lg;
+                        b = lb;
+                    } else {
+                        // Create separate RGB colors for each component
+                        CRGB rgbColorR(lr, 0, 0);
+                        CRGB rgbColorG(0, lg, 0);
+                        CRGB rgbColorB(0, 0, lb);
 
-                    // Convert each to HSV
-                    CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
-                    CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
-                    CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
+                        // Convert each to HSV
+                        CHSV hsvColorR = rgb2hsv_approximate(rgbColorR);
+                        CHSV hsvColorG = rgb2hsv_approximate(rgbColorG);
+                        CHSV hsvColorB = rgb2hsv_approximate(rgbColorB);
 
-                    // Apply HSV adjustments to each component
-                    hsvColorR.hue += ledBlockAdjustments.hue;
-                    hsvColorG.hue += ledBlockAdjustments.hue;
-                    hsvColorB.hue += ledBlockAdjustments.hue;
+                        // Apply HSV adjustments to each component
+                        hsvColorR.hue += ledBlockAdjustments.hue;
+                        hsvColorG.hue += ledBlockAdjustments.hue;
+                        hsvColorB.hue += ledBlockAdjustments.hue;
 
-                    hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
-                    hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
-                    hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
+                        hsvColorR.saturation = scale8(hsvColorR.saturation, ledBlockAdjustments.saturation);
+                        hsvColorG.saturation = scale8(hsvColorG.saturation, ledBlockAdjustments.saturation);
+                        hsvColorB.saturation = scale8(hsvColorB.saturation, ledBlockAdjustments.saturation);
 
-                    hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
-                    hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
-                    hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
+                        hsvColorR.value = scale8(hsvColorR.value, ledBlockAdjustments.value);
+                        hsvColorG.value = scale8(hsvColorG.value, ledBlockAdjustments.value);
+                        hsvColorB.value = scale8(hsvColorB.value, ledBlockAdjustments.value);
 
-                    // Convert back to RGB
-                    hsv2rgb_rainbow(hsvColorR, rgbColorR);
-                    hsv2rgb_rainbow(hsvColorG, rgbColorG);
-                    hsv2rgb_rainbow(hsvColorB, rgbColorB);
+                        // Convert back to RGB
+                        hsv2rgb_rainbow(hsvColorR, rgbColorR);
+                        hsv2rgb_rainbow(hsvColorG, rgbColorG);
+                        hsv2rgb_rainbow(hsvColorB, rgbColorB);
 
-                    // Combine the colors using maximum value for each component
-                    r = max(rgbColorR.r, max(rgbColorG.r, rgbColorB.r));
-                    g = max(rgbColorR.g, max(rgbColorG.g, rgbColorB.g));
-                    b = max(rgbColorR.b, max(rgbColorG.b, rgbColorB.b));
+                        // Combine the colors using maximum value for each component
+                        r = max(rgbColorR.r, max(rgbColorG.r, rgbColorB.r));
+                        g = max(rgbColorR.g, max(rgbColorG.g, rgbColorB.g));
+                        b = max(rgbColorR.b, max(rgbColorG.b, rgbColorB.b));
+                    }
                 }
             }
 
