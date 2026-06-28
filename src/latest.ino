@@ -67,7 +67,7 @@ OctoWS2811 leds(LEDS_PER_PANEL, displayMemory, drawingMemory, config);
 
 // === Types ===
 
-struct RGB
+struct LedColor
 {
     uint8_t blue;
     uint8_t red;
@@ -96,8 +96,8 @@ struct Region
 
 // === Global state ===
 
-RGB groupStates[numGroups] = {0};
-RGB strobeBaseStates[numGroups] = {0};
+LedColor groupStates[numGroups] = {0};
+LedColor strobeBaseStates[numGroups] = {0};
 bool ledStateChanged = false;
 
 byte frameBuffer[FRAME_BYTES];

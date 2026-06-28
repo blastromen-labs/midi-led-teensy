@@ -61,7 +61,7 @@ See [`docs/architecture.html`](docs/architecture.html) for full detail.
 
 - **C++ standard:** **C++17 max** (Teensyduino / Arduino toolchain). Do not use C++20 features (`std::span`, concepts, `consteval`, etc.)
 - **Constants:** display size derived from `width` / `height`; frame size is `FRAME_BYTES = width * height * 3`
-- **Types:** `RGB`, `Mapping`, `HSVAdjustments`, `Region` — reuse instead of duplicating structs
+- **Types:** `LedColor`, `Mapping`, `HSVAdjustments`, `Region` — reuse instead of duplicating structs
 - **Helpers:** `sampleLayer`, `findMapping`, `mapCCScale`, `setGroupColor`, `buildMediaPath`, etc.
 - **MIDI dispatch:** all note on/off goes through `dispatchNoteEvent()` in `setup()`
 - **Refresh:** handlers set `ledStateChanged`; `loop()` calls `updateLEDs()` + `leds.show()` when dirty
