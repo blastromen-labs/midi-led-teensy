@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MIDI LED Teensy — Software Architecture</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --surface: #12161f;
+      --surface-2: #181e2a;
+      --border: #2a3347;
+      --text: #e8ecf4;
+      --muted: #8b95a8;
+      --accent: #5b8cff;
+      --accent-2: #7c5cff;
+      --green: #3dd68c;
+      --red: #ff6b6b;
+      --blue: #4dabf7;
+      --yellow: #ffd43b;
+      --magenta: #da77f2;
+      --cyan: #22d3ee;
+      --radius: 12px;
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      --mono: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
+      --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(91, 140, 255, 0.15), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(124, 92, 255, 0.08), transparent);
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header {
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(91, 140, 255, 0.12);
+      border: 1px solid rgba(91, 140, 255, 0.25);
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 60ch;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    .meta span { display: flex; align-items: center; gap: 0.4rem; }
+    .meta strong { color: var(--text); font-weight: 600; }
+
+    section {
+      margin-bottom: 3rem;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    h2::before {
+      content: "";
+      width: 4px;
+      height: 1.1em;
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      border-radius: 2px;
+    }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--text);
+    }
+
+    p { color: var(--muted); margin-bottom: 1rem; }
+    p.lead { color: var(--text); font-size: 1.05rem; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .card p { font-size: 0.875rem; margin: 0; }
+
+    .stat {
+      text-align: center;
+      padding: 1.5rem 1rem;
+    }
+
+    .stat .value {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--accent), var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat .label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      align-items: stretch;
+    }
+
+    .flow-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .node {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-align: center;
+      min-width: 120px;
+    }
+
+    .node.input { border-color: rgba(77, 171, 247, 0.4); background: rgba(77, 171, 247, 0.08); }
+    .node.process { border-color: rgba(91, 140, 255, 0.4); background: rgba(91, 140, 255, 0.08); }
+    .node.state { border-color: rgba(124, 92, 255, 0.4); background: rgba(124, 92, 255, 0.08); }
+    .node.output { border-color: rgba(61, 214, 140, 0.4); background: rgba(61, 214, 140, 0.08); }
+
+    .arrow {
+      color: var(--muted);
+      font-size: 1.25rem;
+      user-select: none;
+    }
+
+    .arrow-down {
+      text-align: center;
+      color: var(--muted);
+      padding: 0.35rem 0;
+      font-size: 1.1rem;
+    }
+
+    /* Layer stack */
+    .layers {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 0.5rem;
+      max-width: 420px;
+    }
+
+    .layer {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.85rem 1.1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .layer-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .layer-5 { background: rgba(255, 255, 255, 0.12); border-color: rgba(255,255,255,0.25); }
+    .layer-5 .layer-num { background: #fff; color: #111; }
+    .layer-4 { background: rgba(255, 107, 107, 0.1); border-color: rgba(255,107,107,0.3); }
+    .layer-4 .layer-num { background: var(--red); color: #111; }
+    .layer-3 { background: rgba(218, 119, 242, 0.1); border-color: rgba(218,119,242,0.3); }
+    .layer-3 .layer-num { background: var(--magenta); color: #111; }
+    .layer-2 { background: rgba(34, 211, 238, 0.1); border-color: rgba(34,211,238,0.3); }
+    .layer-2 .layer-num { background: var(--cyan); color: #111; }
+    .layer-1 { background: rgba(77, 171, 247, 0.1); border-color: rgba(77,171,247,0.3); }
+    .layer-1 .layer-num { background: var(--blue); color: #111; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface-2);
+      font-weight: 600;
+      color: var(--text);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    code, .mono {
+      font-family: var(--mono);
+      font-size: 0.82em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.15em 0.45em;
+      border-radius: 5px;
+      color: var(--cyan);
+    }
+
+    pre {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      overflow-x: auto;
+      color: var(--muted);
+    }
+
+    pre .kw { color: var(--magenta); }
+    pre .fn { color: var(--blue); }
+    pre .cm { color: #5c677d; }
+
+    .ch-tag {
+      display: inline-block;
+      width: 1.6rem;
+      height: 1.6rem;
+      line-height: 1.6rem;
+      text-align: center;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      margin-right: 0.5rem;
+    }
+
+    .ch-1 { background: rgba(77,171,247,0.2); color: var(--blue); }
+    .ch-2 { background: rgba(255,107,107,0.2); color: var(--red); }
+    .ch-3 { background: rgba(61,214,140,0.2); color: var(--green); }
+    .ch-4 { background: rgba(255,212,59,0.2); color: var(--yellow); }
+    .ch-5 { background: rgba(218,119,242,0.2); color: var(--magenta); }
+    .ch-6 { background: rgba(255,255,255,0.15); color: #fff; }
+
+    .module-list {
+      list-style: none;
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .module-list li {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.875rem;
+    }
+
+    .module-list .name {
+      font-family: var(--mono);
+      color: var(--green);
+      white-space: nowrap;
+      min-width: 160px;
+    }
+
+    .module-list .desc { color: var(--muted); }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      max-width: 280px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      text-align: center;
+    }
+
+    .panel-cell {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.2rem;
+      color: var(--muted);
+    }
+
+    .panel-label {
+      grid-column: 1 / -1;
+      font-size: 0.65rem;
+      color: var(--muted);
+      padding: 0.25rem;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    @media (max-width: 768px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .toc h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+    .toc h2::before { display: none; }
+    .toc ol {
+      columns: 2;
+      column-gap: 2rem;
+      padding-left: 1.25rem;
+      font-size: 0.875rem;
+    }
+
+    .toc a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .toc a:hover { text-decoration: underline; }
+
+    @media (max-width: 600px) {
+      .toc ol { columns: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="badge">Software Architecture Report</div>
+      <h1>MIDI LED Teensy</h1>
+      <p class="subtitle">
+        Real-time MIDI-driven LED matrix controller for Teensy 4.1 — layered video, image, block, and strobe compositing over a 40×96 WS2811 display.
+      </p>
+      <div class="meta">
+        <span><strong>Platform</strong> Teensy 4.1 + Arduino</span>
+        <span><strong>Main source</strong> <code>src/latest.ino</code></span>
+        <span><strong>Lines</strong> ~1,190</span>
+        <span><strong>Display</strong> 40 × 96 (3,840 LEDs)</span>
+      </div>
+    </header>
+
+    <nav class="toc">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#overview">System overview</a></li>
+        <li><a href="#hardware">Hardware stack</a></li>
+        <li><a href="#modules">Software modules</a></li>
+        <li><a href="#runtime">Runtime loop</a></li>
+        <li><a href="#midi">MIDI interface</a></li>
+        <li><a href="#compositing">Layer compositing</a></li>
+        <li><a href="#media">Media pipeline</a></li>
+        <li><a href="#data">Data structures</a></li>
+        <li><a href="#filesystem">SD card layout</a></li>
+        <li><a href="#tooling">External tooling</a></li>
+      </ol>
+    </nav>
+
+    <section id="overview">
+      <h2>System overview</h2>
+      <p class="lead">
+        A DAW sends USB MIDI to the Teensy. The firmware maps notes and control changes to LED state, reads pre-rendered RGB frames from SD card or a serial stream, composites multiple visual layers, and pushes pixels to the physical matrix via OctoWS2811 DMA.
+      </p>
+
+      <div class="flow card" style="padding: 1.75rem;">
+        <div class="flow-row">
+          <div class="node input">DAW / Controller<br><small>USB MIDI</small></div>
+          <span class="arrow">→</span>
+          <div class="node process">Teensy 4.1<br><small>latest.ino</small></div>
+          <span class="arrow">→</span>
+          <div class="node process">OctoWS2811<br><small>DMA driver</small></div>
+          <span class="arrow">→</span>
+          <div class="node output">WS2811 Matrix<br><small>40 × 96 px</small></div>
+        </div>
+        <div class="arrow-down">↕ also reads</div>
+        <div class="flow-row">
+          <div class="node input">SD Card<br><small>video / image .bin</small></div>
+          <div class="node input">Serial @ 2 Mbaud<br><small>live frame stream</small></div>
+        </div>
+      </div>
+
+      <div class="grid-3" style="margin-top: 1.25rem;">
+        <div class="card stat">
+          <div class="value">6</div>
+          <div class="label">MIDI channels</div>
+        </div>
+        <div class="card stat">
+          <div class="value">5</div>
+          <div class="label">Visual layers</div>
+        </div>
+        <div class="card stat">
+          <div class="value">~30</div>
+          <div class="label">Target FPS (SD video)</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="hardware">
+      <h2>Hardware stack</h2>
+      <div class="two-col">
+        <div>
+          <table>
+            <thead>
+              <tr><th>Component</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Teensy 4.1</td><td>Main MCU, USB MIDI host, SD + Serial I/O</td></tr>
+              <tr><td>OctoWS2811</td><td>8-channel WS2811 driver with DMAMEM buffers</td></tr>
+              <tr><td>8 panels × 512 LEDs</td><td>Physical strips (paired per RJ45 connector)</td></tr>
+              <tr><td>SD card</td><td>Media storage (<code>BUILTIN_SDCARD</code>)</td></tr>
+              <tr><td>FastLED</td><td>HSV/RGB color math (software only)</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Logical display</h3>
+          <p>5 columns × 3 rows of 8×32 pixel panels, wired in a serpentine pattern. Logical coordinates (x, y) map to physical LED indices via <code>mapXYtoLedIndex()</code>.</p>
+        </div>
+        <div class="card">
+          <h4>Panel wiring map</h4>
+          <div class="panel-grid">
+            <div class="panel-label">Column</div>
+            <div class="panel-cell">c-1</div>
+            <div class="panel-cell">c-2</div>
+            <div class="panel-cell">c-3</div>
+            <div class="panel-cell">c-4</div>
+            <div class="panel-cell">c-5</div>
+            <div class="panel-label">Row 0</div>
+            <div class="panel-cell">1.1</div>
+            <div class="panel-cell">3.2</div>
+            <div class="panel-cell">4.1</div>
+            <div class="panel-cell">6.2</div>
+            <div class="panel-cell">7.1</div>
+            <div class="panel-label">Row 1</div>
+            <div class="panel-cell">1.2</div>
+            <div class="panel-cell">3.1</div>
+            <div class="panel-cell">4.2</div>
+            <div class="panel-cell">6.1</div>
+            <div class="panel-cell">7.2</div>
+            <div class="panel-label">Row 2</div>
+            <div class="panel-cell">2.1</div>
+            <div class="panel-cell">2.2</div>
+            <div class="panel-cell">5.1</div>
+            <div class="panel-cell">5.2</div>
+            <div class="panel-cell">8.1</div>
+          </div>
+          <p style="margin-top: 1rem; font-size: 0.8rem;">Odd columns reverse panel and block order internally.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="modules">
+      <h2>Software modules</h2>
+      <p><code>src/latest.ino</code> is a single-file firmware organized into labeled sections:</p>
+
+      <ul class="module-list">
+        <li><span class="name">Configuration</span><span class="desc">Display dimensions, MIDI channel/CC constants, timing, buffer sizes</span></li>
+        <li><span class="name">Types + state</span><span class="desc"><code>RGB</code>, <code>Mapping</code>, <code>HSVAdjustments</code>, frame buffers, playback flags</span></li>
+        <li><span class="name">Coordinate / color</span><span class="desc"><code>mapXYtoLedIndex</code>, <code>applyHSVAdjustments</code>, <code>sampleLayer</code>, <code>mapCCScale</code></span></li>
+        <li><span class="name">Media utilities</span><span class="desc"><code>buildMediaPath</code>, <code>findMapping</code>, <code>seekToLastFrame</code></span></li>
+        <li><span class="name">MIDI handlers</span><span class="desc">Per-channel note/CC handlers + <code>dispatchNoteEvent</code></span></li>
+        <li><span class="name">Media I/O</span><span class="desc"><code>startVideo</code>, <code>startImage</code>, <code>handleSDVideo</code>, <code>handleSerialVideo</code></span></li>
+        <li><span class="name">Compositing</span><span class="desc"><code>updateLEDs()</code> — full layer stack per pixel</span></li>
+        <li><span class="name">Setup / loop</span><span class="desc">Init, main event loop, dirty-flag driven refresh</span></li>
+      </ul>
+
+      <p style="margin-top: 1rem;">USB device name is configured separately in <code>src/name.c</code> (Teensy requirement).</p>
+    </section>
+
+    <section id="runtime">
+      <h2>Runtime loop</h2>
+      <pre><span class="cm">// Simplified main loop</span>
+<span class="kw">void</span> <span class="fn">loop</span>() {
+  <span class="kw">while</span> (usbMIDI.read());          <span class="cm">// drain MIDI queue → handlers update state</span>
+
+  <span class="kw">if</span> (Serial.available())
+    <span class="fn">handleSerialVideo</span>();             <span class="cm">// fast path: direct setPixel + show</span>
+  <span class="kw">else if</span> (serial timeout)
+    <span class="fn">clearScreen</span>();                 <span class="cm">// fall back to SD video</span>
+  <span class="kw">else</span>
+    <span class="fn">handleSDVideo</span>();                 <span class="cm">// read next frame into frameBuffer</span>
+
+  <span class="kw">if</span> (ledStateChanged && !leds.busy()) {
+    <span class="fn">updateLEDs</span>();                    <span class="cm">// composite all layers</span>
+    leds.show();
+    ledStateChanged = <span class="kw">false</span>;
+  }
+}</pre>
+
+      <div class="grid-2" style="margin-top: 1rem;">
+        <div class="card">
+          <h4>Dirty-flag refresh</h4>
+          <p>MIDI handlers and SD video set <code>ledStateChanged = true</code>. The compositor runs only when state changed and the DMA driver is idle — avoids redundant full-frame work.</p>
+        </div>
+        <div class="card">
+          <h4>Serial vs SD priority</h4>
+          <p>When a serial stream is active, SD compositing is bypassed. After 1 s of no serial data, the screen clears and SD playback resumes.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="midi">
+      <h2>MIDI interface</h2>
+
+      <h3>Channels</h3>
+      <table>
+        <thead>
+          <tr><th>Ch</th><th>Constant</th><th>Notes</th><th>Control changes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="ch-tag ch-1">1</span></td>
+            <td><code>LED_MIDI_CHANNEL_LEFT</code></td>
+            <td>Block RGB — columns 1–3</td>
+            <td>Hue, Sat, Value (per-channel HSV on blocks)</td>
+          </tr>
+          <tr>
+            <td><span class="ch-tag ch-2">2</span></td>
+            <td><code>LED_MIDI_CHANNEL_RIGHT</code></td>
+            <td>Block RGB — columns 4–5</td>
+            <td>Same as ch 1</td>
+          </tr>
+          <tr>
+            <td><span class="ch-tag ch-3">3</span></td>
+            <td><code>VIDEO_MIDI_CHANNEL</code></td>
+            <td>Trigger video by note + bank</td>
+            <td>Bank (20), X/Y (4/5), Speed (10), Direction (7), Scale (8), Mirror (12), HSV (1–3)</td>
+          </tr>
+          <tr>
+            <td><span class="ch-tag ch-4">4</span></td>
+            <td><code>IMAGE_MIDI_CHANNEL</code></td>
+            <td>Trigger image by note + bank; velocity → brightness</td>
+            <td>Bank (20), Scale (8), X/Y (4/5), HSV (1–3)</td>
+          </tr>
+          <tr>
+            <td><span class="ch-tag ch-5">5</span></td>
+            <td><code>ROW_MIDI_CHANNEL</code></td>
+            <td>Full-width row fill (8 px tall bands)</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><span class="ch-tag ch-6">6</span></td>
+            <td><code>STROBE_MIDI_CHANNEL</code></td>
+            <td>Region strobe patterns + white row strobe (103–114)</td>
+            <td>HSV (1–3)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Note dispatch</h3>
+      <p>Every note on/off calls <code>dispatchNoteEvent()</code>, which fan-outs to all six handlers. Each handler early-returns if the channel doesn't match — simple and extensible.</p>
+    </section>
+
+    <section id="compositing">
+      <h2>Layer compositing</h2>
+      <p><code>updateLEDs()</code> iterates every pixel (x, y), maps to a physical LED index, and resolves color top-down:</p>
+
+      <div class="two-col">
+        <div class="layers">
+          <div class="layer layer-5">
+            <span class="layer-num">5</span>
+            <span><strong>Strobe overlay</strong> — <code>strobeActive[]</code> per-LED mask, highest priority</span>
+          </div>
+          <div class="layer layer-4">
+            <span class="layer-num">4</span>
+            <span><strong>Legacy equal-RGB blocks</strong> — bypasses blending when R=G=B &gt; 0</span>
+          </div>
+          <div class="layer layer-3">
+            <span class="layer-num">3</span>
+            <span><strong>LED blocks</strong> — <code>groupStates[]</code>, independent per-channel HSV</span>
+          </div>
+          <div class="layer layer-2">
+            <span class="layer-num">2</span>
+            <span><strong>Image</strong> — alpha blend over video, scale/offset/HSV/velocity brightness</span>
+          </div>
+          <div class="layer layer-1">
+            <span class="layer-num">1</span>
+            <span><strong>Video</strong> — bottom layer from <code>frameBuffer</code>, threshold + HSV + mirror/scale</span>
+          </div>
+        </div>
+
+        <div>
+          <h3>Key helpers</h3>
+          <table>
+            <thead><tr><th>Function</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>sampleLayer()</code></td><td>Scale, offset, optional mirror → sample RGB from buffer</td></tr>
+              <tr><td><code>applyHSVAdjustments()</code></td><td>FastLED HSV transform on video/image/strobe</td></tr>
+              <tr><td><code>perceivedBrightness()</code></td><td>Luminance threshold to suppress noise pixels</td></tr>
+              <tr><td><code>setGroupColor()</code></td><td>Write B/R/G to a 64-LED group</td></tr>
+            </tbody>
+          </table>
+
+          <p style="margin-top: 1rem; font-size: 0.85rem;">
+            <strong>Serial fast path:</strong> <code>handleSerialVideo()</code> writes pixels directly, skipping the layer stack for maximum throughput.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="media">
+      <h2>Media pipeline</h2>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>SD card video</h4>
+          <p>Raw RGB frames stored as <code>FRAME_BYTES</code> (11,520 bytes) per frame. Note-on on ch 3 looks up <code>video_map.txt</code>, opens <code>/video/{bank}/{file}.bin</code>, streams frames at ~30 FPS with speed/direction/loop controls.</p>
+          <p style="margin-top: 0.75rem;"><code>handleSDVideo()</code> manages timing, reverse seek, and looping via <code>seekToLastFrame()</code>.</p>
+        </div>
+        <div class="card">
+          <h4>SD card image</h4>
+          <p>Single-frame <code>.bin</code> loaded into <code>imageBuffer</code>. Note-off clears the layer. Velocity sets per-mapping brightness used during alpha blending.</p>
+        </div>
+        <div class="card">
+          <h4>Serial stream</h4>
+          <p>2 Mbaud USB serial receives full frames into <code>serialBuffer</code>, copies to <code>frameBuffer</code>, maps XY → LED, applies brightness threshold, and calls <code>leds.show()</code> immediately.</p>
+        </div>
+        <div class="card">
+          <h4>Bank system</h4>
+          <p>CC 20 on ch 3 or 4 selects bank 0–127. Mappings are filtered by <code>(note, bank)</code>. CC and note-on can arrive in the same DAW tick — bank is set before lookup.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="data">
+      <h2>Data structures</h2>
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Type / size</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>groupStates</code></td><td><code>RGB[64]</code></td><td>Per 64-LED block B/R/G from MIDI ch 1/2/5</td></tr>
+          <tr><td><code>strobeBaseStates</code></td><td><code>RGB[64]</code></td><td>Strobe colors before HSV (ch 6)</td></tr>
+          <tr><td><code>strobeActive</code></td><td><code>bool[3840]</code></td><td>Per-LED strobe mask</td></tr>
+          <tr><td><code>frameBuffer</code></td><td><code>byte[11520]</code></td><td>Current video / serial frame (RGB interleaved)</td></tr>
+          <tr><td><code>imageBuffer</code></td><td><code>byte[11520]</code></td><td>Loaded still image</td></tr>
+          <tr><td><code>videoMappings</code></td><td><code>Mapping[512]</code></td><td>Note → bank → filename lookup table</td></tr>
+          <tr><td><code>HSVAdjustments</code></td><td>struct × 4</td><td>Separate HSV state for video, image, blocks, strobe</td></tr>
+          <tr><td><code>STROBE_PATTERNS</code></td><td><code>Region[14]</code></td><td>Screen regions for strobe note patterns</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="filesystem">
+      <h2>SD card layout</h2>
+      <pre>
+/
+├── video_map.txt          <span class="cm"># NOTE,BANK,FILENAME per line</span>
+├── image_map.txt
+├── video/
+│   ├── 0/
+│   │   ├── atom.bin       <span class="cm"># raw RGB, 11520 bytes/frame</span>
+│   │   └── cube.bin
+│   └── 1/
+│       └── helix.bin
+└── image/
+    ├── 0/
+    │   └── logo.bin       <span class="cm"># single frame, 11520 bytes</span>
+    └── 1/
+        └── pattern.bin</pre>
+    </section>
+
+    <section id="tooling">
+      <h2>External tooling</h2>
+      <p>Python scripts in <code>tools/</code> prepare media for the firmware. They are not part of the on-device runtime.</p>
+      <div class="grid-3">
+        <div class="card"><h4>Conversion</h4><p><code>convert.py</code>, <code>convert_vid.py</code>, <code>convert_img.py</code>, <code>video_converter.py</code> — produce <code>.bin</code> frame files</p></div>
+        <div class="card"><h4>Streaming</h4><p><code>video_stream.py</code>, <code>send.py</code>, <code>streamer/</code> — push frames over serial at 2 Mbaud</p></div>
+        <div class="card"><h4>Content</h4><p><code>cv_*.py</code>, <code>cube.py</code> — generative visuals converted to bin format</p></div>
+      </div>
+    </section>
+
+    <footer>
+      Generated for midi-led-teensy · Architecture reflects <code>src/latest.ino</code> post-DRY refactor
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,6 +1,76 @@
 ---
-description:
-globs:
+description: Teensy MIDI→LED firmware conventions, file layout, and agent guardrails
 alwaysApply: true
 ---
-This is Teensy Arduino project that uses MIDI to light up LED lights. Project is in /src/latest.ino
+
+# MIDI LED Teensy — agent guide
+
+## Entry points
+
+| Path | Role |
+|------|------|
+| `src/latest.ino` | **All firmware logic** (~1,190 lines, single file by design) |
+| `src/name.c` | USB device name only — Teensy requires a separate `.c` tab |
+| `docs/architecture.html` | Architecture report — read before large changes |
+| `README.md` | MIDI mapping, SD layout, contributor workflow |
+| `tools/` | Python media prep — **not** flashed to device |
+
+## Hardware (current)
+
+- Teensy 4.1 + OctoWS2811 + WS2811 matrix
+- Logical display: **40×96** (3,840 LEDs), 8 panels in serpentine wiring
+- DAW → USB MIDI; optional SD card + 2 Mbaud serial video stream
+
+## `latest.ino` structure
+
+Keep new code in the matching section (do not scatter):
+
+1. Configuration constants
+2. Types + global state
+3. Forward declarations
+4. Coordinate / color utilities (`mapXYtoLedIndex`, `sampleLayer`, `applyHSVAdjustments`, …)
+5. Media utilities (`buildMediaPath`, `findMapping`, …)
+6. MIDI handlers (`handle*NoteEvent`, `handleControlChange`, `dispatchNoteEvent`)
+7. Media I/O (`startVideo`, `handleSDVideo`, `handleSerialVideo`, …)
+8. Compositing (`updateLEDs`)
+9. `setup()` / `loop()`
+
+## Coding conventions
+
+- **C++17 max** — Teensyduino does not support C++20; no concepts, `std::span`, designated initializers (C++20 style), `consteval`, etc.
+- **Stay in one file** unless the user explicitly asks to split
+- **DRY**: reuse existing helpers; add small helpers in the utilities section
+- **Minimal diffs** — no drive-by refactors or unrelated cleanup
+- Match existing naming: `camelCase` functions, `UPPER_SNAKE` MIDI constants
+- New MIDI CC/channel → update README MIDI tables + this rule if needed
+- Frame size: `FRAME_BYTES = width * height * 3` (11,520 bytes)
+- Map filenames: **8.3 only** (`char filename[13]`) — e.g. `cube.bin`, not `my-long-video.bin`
+
+## Layer compositing (do not break silently)
+
+Bottom → top in `updateLEDs()`: video → image (alpha) → LED blocks → strobe overlay.
+
+- `handleSerialVideo()` **bypasses** the layer stack (fast path) — intentional
+- Strobe uses `strobeActive[]` + `strobeBaseStates[]`, not `groupStates`
+- LED blocks use **per-channel** HSV (not combined RGB HSV)
+
+## Safe change patterns
+
+```cpp
+// New strobe region → add row to STROBE_PATTERNS[]
+// New media type → reuse sampleLayer() + updateLEDs layer slot
+// New note mapping → extend handler + video_map.txt / image_map.txt format
+// New CC → handleControlChange() + README CC table
+```
+
+## Do not without explicit user request
+
+- Split firmware into multiple tabs/files (except `name.c`)
+- Unify serial video through `updateLEDs()` (changes live-stream behavior)
+- Remove legacy equal-RGB block strobe branch in `updateLEDs()`
+- Create git commits or push
+- Edit `docs/architecture.html` unless updating architecture docs
+
+## After firmware changes
+
+Suggest hardware smoke test: startup blue flash, MIDI ch 1–6, SD video loop, image layer, serial stream timeout.
