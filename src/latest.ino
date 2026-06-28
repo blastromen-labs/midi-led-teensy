@@ -470,6 +470,7 @@ void loadMappings(const char *filename, Mapping *mappings, int &count)
                 mappings[count].note = line.substring(0, firstComma).toInt();
                 mappings[count].bank = line.substring(firstComma + 1, secondComma).toInt();
                 line.substring(secondComma + 1).toCharArray(mappings[count].filename, 13);
+                mappings[count].brightness = 255;  // full brightness until MIDI velocity overrides
 
                 Serial.print("  Loaded mapping #");
                 Serial.print(count);
