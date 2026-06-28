@@ -155,6 +155,8 @@ byte currentImageBank = 0;
 unsigned long lastSerialDataTime = 0;
 bool serialStreamActive = false;
 
+static uint16_t xyToLed[totalLeds];  // precomputed in setup(); indices fit in 16 bits (max 3839)
+
 static const Region STROBE_PATTERNS[] = {
     {0, width, 0, 48},
     {0, width, 48, height},
@@ -270,6 +272,20 @@ int mapXYtoLedIndex(int x, int y)
     }
 
     return panel_index * (PANEL_WIDTH * PANEL_HEIGHT) + led_in_panel;
+}
+
+void initXyToLedTable()
+{
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+            xyToLed[y * width + x] = (uint16_t)mapXYtoLedIndex(x, y);
+    }
+}
+
+inline int ledIndexAt(int x, int y)
+{
+    return xyToLed[y * width + x];
 }
 
 void setGroupColor(int group, int colorSection, uint8_t brightness)
@@ -408,7 +424,7 @@ void handleRowNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteOn)
     {
         for (int y = rowIndex; y < rowIndex + 8; y++)
         {
-            int group = mapXYtoLedIndex(x, y) / ledsPerGroup;
+            int group = ledIndexAt(x, y) / ledsPerGroup;
             setGroupColor(group, colorSection, brightness);
         }
     }
@@ -752,7 +768,7 @@ void updateLEDs()
     {
         for (int x = 0; x < width; x++)
         {
-            int ledIndex = mapXYtoLedIndex(x, y);
+            int ledIndex = ledIndexAt(x, y);
             int group = ledIndex / ledsPerGroup;
 
             if (strobeActive[ledIndex])
@@ -895,7 +911,7 @@ void handleStrobeNoteEvent(byte channel, byte pitch, byte velocity, bool isNoteO
 
     auto setStrobeState = [&](int x, int y, bool state, bool isWhite, bool isRed, bool isGreen, bool isBlue)
     {
-        int ledIndex = mapXYtoLedIndex(x, y);
+        int ledIndex = ledIndexAt(x, y);
         int group = ledIndex / ledsPerGroup;
         strobeActive[ledIndex] = state;
         if (state && brightness > 0)
@@ -1035,7 +1051,7 @@ void handleSerialVideo()
         {
             for (int x = 0; x < width; x++)
             {
-                int ledIndex = mapXYtoLedIndex(x, y);
+                int ledIndex = ledIndexAt(x, y);
                 int bufferIndex = (y * width + x) * 3;
                 int r = frameBuffer[bufferIndex];
                 int g = frameBuffer[bufferIndex + 1];
@@ -1141,6 +1157,8 @@ void setup()
 
     leds.begin();
     leds.show();
+
+    initXyToLedTable();
 
     if (!SD.begin(chipSelect))
     {
